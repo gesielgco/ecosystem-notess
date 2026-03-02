@@ -1,0 +1,11 @@
+
+# deps
+node_modules/
+app/node_modules/
+
+# build
+dist/
+app/dist/
+
+# misc
+.DS_Store
