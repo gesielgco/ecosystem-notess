@@ -1,548 +1,458 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
+import * as ScrollArea from "@radix-ui/react-scroll-area";
+import { Clock, Plus, Settings2, Bold, Italic, Underline } from "lucide-react";
 
-type NoteItem = {
+type NoteSnapshot = {
   id: string;
   title: string;
   html: string;
   bg: string;
-  fg: string;
+  color: string;
   updatedAt: number;
 };
 
-const NOTE_BG = [
-  { name: "Cinza", value: "#F7F7F7" }, // padrão
+const STORAGE_CURRENT = "folhaUnica.current.v1";
+const STORAGE_HISTORY = "folhaUnica.history.v1";
+
+const BG_COLORS = [
+  { name: "Padrão", value: "#F7F7F7" },
   { name: "Creme", value: "#F7E7CD" },
   { name: "Coral", value: "#FAD0C4" },
   { name: "Menta", value: "#D4EFDF" },
   { name: "Névoa", value: "#D6EAF8" },
 ] as const;
 
-const TEXT_FG = [
-  { name: "Chumbo", value: "#333333" }, // padrão
-  { name: "Magenta", value: "#C71585" },
+const TEXT_COLORS = [
+  { name: "Chumbo", value: "#333333" },
+  { name: "Rosa Escuro", value: "#C71585" },
   { name: "Azul", value: "#0047AB" },
   { name: "Laranja", value: "#FF8C00" },
   { name: "Verde", value: "#228B22" },
 ] as const;
 
-const LS_CURRENT = "folha-unica:current";
-const LS_HISTORY = "folha-unica:history";
-
 function nowTimeLabel(ts: number) {
   const d = new Date(ts);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
-function safeTextFromHtml(html: string) {
-  const div = document.createElement("div");
-  div.innerHTML = html || "";
-  return (div.textContent || "").trim();
+function clampTitle(raw: string) {
+  return raw.slice(0, 20);
 }
 
 function uid() {
-  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export default function App() {
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const [title, setTitle] = useState("");
-  const [titleShake, setTitleShake] = useState(false);
 
-  const [bg, setBg] = useState<string>(NOTE_BG[0].value);
-  const [fg, setFg] = useState<string>(TEXT_FG[0].value);
+  const [title, setTitle] = useState<string>("");
+  const [bg, setBg] = useState<string>(BG_COLORS[0].value);
+  const [color, setColor] = useState<string>(TEXT_COLORS[0].value);
+  const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
+  const [history, setHistory] = useState<NoteSnapshot[]>([]);
 
-  const [savedAt, setSavedAt] = useState<number>(Date.now());
-  const [showFormat, setShowFormat] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [shake, setShake] = useState(false);
 
-  const [history, setHistory] = useState<NoteItem[]>([]);
-
-  // === LOAD ===
+  // --- Load on mount
   useEffect(() => {
     try {
-      const rawH = localStorage.getItem(LS_HISTORY);
-      if (rawH) setHistory(JSON.parse(rawH));
+      const hRaw = localStorage.getItem(STORAGE_HISTORY);
+      if (hRaw) setHistory(JSON.parse(hRaw) as NoteSnapshot[]);
+    } catch {}
 
-      const rawC = localStorage.getItem(LS_CURRENT);
-      if (rawC) {
-        const cur = JSON.parse(rawC) as NoteItem;
-        setTitle(cur.title || "");
-        setBg(cur.bg || NOTE_BG[0].value);
-        setFg(cur.fg || TEXT_FG[0].value);
-        setSavedAt(cur.updatedAt || Date.now());
-        queueMicrotask(() => {
-          if (editorRef.current) editorRef.current.innerHTML = cur.html || "";
-        });
-      } else {
-        queueMicrotask(() => {
-          if (editorRef.current) editorRef.current.innerHTML = "";
-        });
-      }
-    } catch {
-      // ignore
-    }
+    try {
+      const raw = localStorage.getItem(STORAGE_CURRENT);
+      if (!raw) return;
+      const cur = JSON.parse(raw) as NoteSnapshot;
+
+      setTitle(cur.title ?? "");
+      setBg(cur.bg ?? BG_COLORS[0].value);
+      setColor(cur.color ?? TEXT_COLORS[0].value);
+      setUpdatedAt(cur.updatedAt ?? Date.now());
+
+      requestAnimationFrame(() => {
+        if (editorRef.current) {
+          editorRef.current.innerHTML = cur.html ?? "";
+        }
+      });
+    } catch {}
   }, []);
 
-  // === SAVE (debounce) ===
-  const saveTimer = useRef<number | null>(null);
-  const saveCurrent = (force?: boolean) => {
-    if (!editorRef.current) return;
-    const html = editorRef.current.innerHTML ?? "";
-
-    const cur: NoteItem = {
-      id: "current",
-      title: title.slice(0, 20),
-      html,
-      bg,
-      fg,
-      updatedAt: Date.now(),
-    };
-
-    const doSave = () => {
-      try {
-        localStorage.setItem(LS_CURRENT, JSON.stringify(cur));
-        setSavedAt(cur.updatedAt);
-      } catch {
-        // ignore
-      }
-    };
-
-    if (force) {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-      doSave();
-      return;
-    }
-
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(doSave, 350);
-  };
-
-  // Save when colors change too
+  // --- Autosave current (debounced)
   useEffect(() => {
-    saveCurrent(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bg, fg]);
+    const t = window.setTimeout(() => {
+      const html = editorRef.current?.innerHTML ?? "";
+      const snap: NoteSnapshot = {
+        id: "current",
+        title,
+        html,
+        bg,
+        color,
+        updatedAt,
+      };
+      try {
+        localStorage.setItem(STORAGE_CURRENT, JSON.stringify(snap));
+      } catch {}
+    }, 200);
 
-  const pushToHistory = () => {
-    if (!editorRef.current) return;
+    return () => window.clearTimeout(t);
+  }, [title, bg, color, updatedAt]);
 
-    const html = editorRef.current.innerHTML ?? "";
-    const text = safeTextFromHtml(html);
-
-    // evita salvar “nota vazia”
-    if (!title.trim() && !text) {
-      // só limpa
-      setTitle("");
-      editorRef.current.innerHTML = "";
-      saveCurrent(true);
-      return;
-    }
-
-    const item: NoteItem = {
-      id: uid(),
-      title: (title.trim() || text.slice(0, 20) || "Sem título").slice(0, 20),
-      html,
-      bg,
-      fg,
-      updatedAt: Date.now(),
-    };
-
-    const next = [item, ...history].slice(0, 200);
-    setHistory(next);
+  // Helper: persist history list
+  const persistHistory = (items: NoteSnapshot[]) => {
+    setHistory(items);
     try {
-      localStorage.setItem(LS_HISTORY, JSON.stringify(next));
-    } catch {
-      // ignore
-    }
-
-    // nova nota
-    setTitle("");
-    editorRef.current.innerHTML = "";
-    saveCurrent(true);
+      localStorage.setItem(STORAGE_HISTORY, JSON.stringify(items));
+    } catch {}
   };
 
-  const loadFromHistory = (item: NoteItem) => {
-    setTitle(item.title || "");
-    setBg(item.bg || NOTE_BG[0].value);
-    setFg(item.fg || TEXT_FG[0].value);
-    setSavedAt(item.updatedAt || Date.now());
-    if (editorRef.current) editorRef.current.innerHTML = item.html || "";
-    setShowHistory(false);
-    setShowFormat(false);
-    saveCurrent(true);
-  };
+  const currentPreview = useMemo(() => {
+    const t = title.trim();
+    return t.length ? t : "Sem Título";
+  }, [title]);
 
-  const clearAll = () => {
-    if (!editorRef.current) return;
-    setTitle("");
-    editorRef.current.innerHTML = "";
-    setBg(NOTE_BG[0].value);
-    setFg(TEXT_FG[0].value);
-    setShowFormat(false);
-    setShowHistory(false);
-    saveCurrent(true);
-  };
-
-  // === Rich Text Commands ===
-  const cmd = (command: "bold" | "italic" | "underline") => {
+  // --- Formatting helpers (execCommand: simples e funciona bem pra B/I/U)
+  const applyCmd = (cmd: "bold" | "italic" | "underline") => {
     editorRef.current?.focus();
-    document.execCommand(command);
-    saveCurrent();
+    document.execCommand(cmd);
+    setUpdatedAt(Date.now());
   };
 
-  // === List behavior helpers ===
-  const placeCaretAtEnd = (el: HTMLElement) => {
-    el.focus();
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    range.collapse(false);
+  const isInList = () => {
     const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-  };
-
-  const ensureListFromTypedPrefix = () => {
-    const el = editorRef.current;
-    if (!el) return;
-
-    // pega texto simples do começo (funciona bem quando está “no começo da linha”)
-    const plain = el.innerText.replace(/\r/g, "");
-    // se o usuário começou a nota com "* " ou "- " -> cria lista
-    if (plain.startsWith("* ") || plain.startsWith("- ")) {
-      // remove prefixo e cria UL
-      const content = plain.slice(2);
-      el.innerHTML = `<ul><li>${content || "<br>"}</li></ul>`;
-      placeCaretAtEnd(el);
-      return true;
+    if (!sel || sel.rangeCount === 0) return false;
+    let node: Node | null = sel.anchorNode;
+    while (node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        if (el.tagName === "LI") return true;
+      }
+      node = node.parentNode;
     }
     return false;
   };
 
-  // Tab / Enter list rules
-  const lastEnterAt = useRef<number>(0);
-
-  const onEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const el = editorRef.current;
-    if (!el) return;
-
-    // atalhos
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
-      const k = e.key.toLowerCase();
-      if (k === "b") {
-        e.preventDefault();
-        cmd("bold");
-        return;
+  const getClosestLI = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    let node: Node | null = sel.anchorNode;
+    while (node) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        if (el.tagName === "LI") return el;
       }
-      if (k === "i") {
-        e.preventDefault();
-        cmd("italic");
-        return;
-      }
-      if (k === "u") {
-        e.preventDefault();
-        cmd("underline");
-        return;
-      }
+      node = node.parentNode;
     }
-
-    // Tab indent / outdent (especialmente em lista)
-    if (e.key === "Tab") {
-      e.preventDefault();
-      editorRef.current?.focus();
-      document.execCommand(e.shiftKey ? "outdent" : "indent");
-      saveCurrent();
-      return;
-    }
-
-    // Enter duplo sai da lista (sem pular linha extra)
-    if (e.key === "Enter") {
-      const now = Date.now();
-      const isDouble = now - lastEnterAt.current < 450;
-      lastEnterAt.current = now;
-
-      // se estiver em lista e for enter duplo => sair
-      const sel = window.getSelection();
-      const anchor = sel?.anchorNode as Node | null;
-      const li = anchor ? (anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement)?.closest("li") : null;
-
-      if (li && isDouble) {
-        e.preventDefault();
-        // encerra lista inserindo parágrafo após ul
-        const ul = li.closest("ul");
-        if (ul) {
-          const p = document.createElement("p");
-          p.innerHTML = "<br>";
-          ul.insertAdjacentElement("afterend", p);
-          // remove li vazio se necessário
-          if (li.textContent?.trim() === "") li.remove();
-          // se ul ficou vazio, remove
-          if (ul.querySelectorAll("li").length === 0) ul.remove();
-          placeCaretAtEnd(p);
-          saveCurrent();
-          return;
-        }
-      }
-    }
+    return null;
   };
 
-  const onEditorInput = () => {
-    // converte prefixo em lista se detectado
-    const did = ensureListFromTypedPrefix();
-    if (!did) saveCurrent();
-  };
-
-  // === Title rules (20 chars + shake) ===
-  const onTitleChange = (v: string) => {
+  const handleTitleChange = (v: string) => {
     if (v.length <= 20) {
       setTitle(v);
-      saveCurrent();
       return;
     }
-    // excedeu: trava e treme
-    setTitleShake(true);
-    window.setTimeout(() => setTitleShake(false), 280);
+    // excedeu: trava e dá shake
+    setTitle(clampTitle(v));
+    setShake(true);
+    window.setTimeout(() => setShake(false), 260);
   };
 
-  const topRightMenu = useMemo(() => {
-    return (
-      <div className="relative flex items-center gap-2">
-        {/* ⚙️ */}
-        <button
-          type="button"
-          onClick={() => {
-            setShowFormat((s) => !s);
-            setShowHistory(false);
-          }}
-          className="h-9 w-9 rounded-full border border-zinc-200 bg-white/70 backdrop-blur hover:bg-white shadow-sm grid place-items-center"
-          title="Formatação"
-        >
-          <span className="text-[16px]">⚙️</span>
-        </button>
+  // Converter "* " ou "- " em lista quando aperta ESPAÇO no começo da linha
+  const tryConvertToList = () => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
 
-        {/* + */}
-        <button
-          type="button"
-          onClick={pushToHistory}
-          className="h-9 w-9 rounded-full border border-zinc-200 bg-white/70 backdrop-blur hover:bg-white shadow-sm grid place-items-center"
-          title="Nova nota"
-        >
-          <span className="text-[18px] leading-none">＋</span>
-        </button>
+    const range = sel.getRangeAt(0);
+    const container = range.startContainer;
 
-        {/* 🕒 */}
-        <button
-          type="button"
-          onClick={() => {
-            setShowHistory((s) => !s);
-            setShowFormat(false);
-          }}
-          className="h-9 w-9 rounded-full border border-zinc-200 bg-white/70 backdrop-blur hover:bg-white shadow-sm grid place-items-center"
-          title="Histórico"
-        >
-          <span className="text-[16px]">🕒</span>
-        </button>
+    // pega texto do "bloco atual" (bem simples)
+    let el: Node | null = container;
+    while (el && el !== editorRef.current && el.parentNode) {
+      if (el.nodeType === Node.ELEMENT_NODE) {
+        const ht = el as HTMLElement;
+        if (ht.tagName === "DIV" || ht.tagName === "P") break;
+      }
+      el = el.parentNode;
+    }
 
-        {/* Format popover */}
-        {showFormat && (
-          <div className="absolute right-0 top-11 z-50 w-[360px] rounded-2xl border border-zinc-200 bg-white shadow-xl p-3">
-            <div className="text-[12px] text-zinc-500 mb-2">Fundo</div>
-            <div className="flex items-center gap-2 mb-3">
-              {NOTE_BG.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  onClick={() => setBg(c.value)}
-                  className="h-8 w-8 rounded-full border border-zinc-200 shadow-sm"
-                  style={{
-                    background: c.value,
-                    outline: c.value === bg ? "2px solid rgba(0,0,0,0.35)" : "none",
-                    outlineOffset: "2px",
-                  }}
-                  title={c.name}
-                />
-              ))}
-            </div>
+    // fallback: editor direto
+    const block = (el && el.nodeType === Node.ELEMENT_NODE ? (el as HTMLElement) : editorRef.current) as HTMLElement | null;
+    if (!block) return;
 
-            <div className="text-[12px] text-zinc-500 mb-2">Texto</div>
-            <div className="flex items-center gap-2 mb-3">
-              {TEXT_FG.map((c) => (
-                <button
-                  key={c.value}
-                  type="button"
-                  onClick={() => setFg(c.value)}
-                  className="h-8 w-8 rounded-full border border-zinc-200 shadow-sm grid place-items-center"
-                  style={{
-                    background: "#fff",
-                    outline: c.value === fg ? "2px solid rgba(0,0,0,0.35)" : "none",
-                    outlineOffset: "2px",
-                  }}
-                  title={c.name}
-                >
-                  <span style={{ color: c.value, fontWeight: 700 }}>A</span>
-                </button>
-              ))}
-            </div>
+    const text = (block.textContent ?? "").replace(/\u00A0/g, " "); // nbsp
+    // se o usuário acabou de digitar "* " ou "- " no começo
+    if (text === "*" || text === "-" || text === "* " || text === "- ") {
+      // remove marcador e cria lista
+      block.textContent = "";
+      document.execCommand("insertUnorderedList");
+    }
+  };
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => cmd("bold")}
-                className="h-9 px-3 rounded-xl border border-zinc-200 hover:bg-zinc-50"
-                title="Negrito (Ctrl+B)"
-              >
-                <b>B</b>
-              </button>
-              <button
-                type="button"
-                onClick={() => cmd("italic")}
-                className="h-9 px-3 rounded-xl border border-zinc-200 hover:bg-zinc-50"
-                title="Itálico (Ctrl+I)"
-              >
-                <i>I</i>
-              </button>
-              <button
-                type="button"
-                onClick={() => cmd("underline")}
-                className="h-9 px-3 rounded-xl border border-zinc-200 hover:bg-zinc-50"
-                title="Sublinhado (Ctrl+U)"
-              >
-                <u>U</u>
-              </button>
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // atalhos: Ctrl/Cmd + B/I/U
+    const meta = e.metaKey || e.ctrlKey;
+    if (meta && (e.key === "b" || e.key === "B")) {
+      e.preventDefault();
+      applyCmd("bold");
+      return;
+    }
+    if (meta && (e.key === "i" || e.key === "I")) {
+      e.preventDefault();
+      applyCmd("italic");
+      return;
+    }
+    if (meta && (e.key === "u" || e.key === "U")) {
+      e.preventDefault();
+      applyCmd("underline");
+      return;
+    }
 
-              <div className="ml-auto">
-                <button
-                  type="button"
-                  onClick={clearAll}
-                  className="h-9 px-3 rounded-xl border border-zinc-200 hover:bg-zinc-50 text-zinc-700"
-                  title="Limpar"
-                >
-                  Limpar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+    // TAB: indent/outdent quando estiver em lista
+    if (e.key === "Tab") {
+      if (isInList()) {
+        e.preventDefault();
+        document.execCommand(e.shiftKey ? "outdent" : "indent");
+        setUpdatedAt(Date.now());
+      }
+      return;
+    }
 
-        {/* History popover */}
-        {showHistory && (
-          <div className="absolute right-0 top-11 z-50 w-[320px] max-h-[360px] overflow-auto rounded-2xl border border-zinc-200 bg-white shadow-xl">
-            <div className="p-3 border-b border-zinc-100 text-[12px] text-zinc-500">
-              Histórico ({history.length})
-            </div>
+    // Espaço: tenta converter "* " ou "- " em lista
+    if (e.key === " ") {
+      // dá chance do caractere entrar e então avalia
+      window.setTimeout(() => {
+        tryConvertToList();
+        setUpdatedAt(Date.now());
+      }, 0);
+      return;
+    }
 
-            {history.length === 0 ? (
-              <div className="p-4 text-sm text-zinc-500">Sem notas ainda. Clique em “+” para salvar a atual no histórico.</div>
-            ) : (
-              <div className="p-2">
-                {history.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => loadFromHistory(item)}
-                    className="w-full text-left p-3 rounded-xl hover:bg-zinc-50 border border-transparent hover:border-zinc-100"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-3 w-3 rounded-full border border-zinc-200"
-                        style={{ background: item.bg }}
-                        aria-hidden
-                      />
-                      <div className="font-medium text-[14px] text-zinc-900 truncate">
-                        {item.title || "Sem título"}
-                      </div>
-                      <div className="ml-auto text-[12px] text-zinc-500">
-                        {nowTimeLabel(item.updatedAt)}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }, [bg, fg, history, showFormat, showHistory]);
+    // ENTER duplo para sair da lista sem “pular” feio
+    if (e.key === "Enter") {
+      if (isInList()) {
+        const li = getClosestLI();
+        const empty = !li || (li.textContent ?? "").trim() === "";
+        if (empty) {
+          e.preventDefault();
+          // Sai da lista
+          document.execCommand("insertParagraph");
+          document.execCommand("outdent");
+          setUpdatedAt(Date.now());
+        }
+      }
+      return;
+    }
+  };
+
+  const handleEditorInput = () => {
+    setUpdatedAt(Date.now());
+  };
+
+  const snapshotCurrent = (): NoteSnapshot => {
+    return {
+      id: uid(),
+      title: clampTitle(title.trim() || "Sem Título"),
+      html: editorRef.current?.innerHTML ?? "",
+      bg,
+      color,
+      updatedAt: Date.now(),
+    };
+  };
+
+  const newNote = () => {
+    // salva atual no histórico se tiver algum conteúdo
+    const html = (editorRef.current?.innerHTML ?? "").replace(/\s+/g, "");
+    const hasSomething = html.length > 0 || title.trim().length > 0;
+
+    if (hasSomething) {
+      const snap = snapshotCurrent();
+      const next = [snap, ...history].slice(0, 200);
+      persistHistory(next);
+    }
+
+    // limpa
+    setTitle("");
+    setBg(BG_COLORS[0].value);
+    setColor(TEXT_COLORS[0].value);
+    setUpdatedAt(Date.now());
+    if (editorRef.current) editorRef.current.innerHTML = "";
+    // foco
+    window.setTimeout(() => editorRef.current?.focus(), 0);
+  };
+
+  const loadFromHistory = (snap: NoteSnapshot) => {
+    setTitle(clampTitle(snap.title ?? ""));
+    setBg(snap.bg ?? BG_COLORS[0].value);
+    setColor(snap.color ?? TEXT_COLORS[0].value);
+    setUpdatedAt(Date.now());
+    requestAnimationFrame(() => {
+      if (editorRef.current) editorRef.current.innerHTML = snap.html ?? "";
+    });
+  };
 
   return (
-    <div className="min-h-screen w-full bg-[#f5f6f7]">
-      {/* “mesa” pontilhada suave */}
-      <div className="min-h-screen w-full app-dots">
-        {/* Folhinha central */}
-        <div className="mx-auto max-w-[980px] px-6 pt-10">
-          <div
-            className="mx-auto w-[360px] rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.08)] border border-zinc-200/80 overflow-hidden"
-            style={{ background: bg }}
-          >
-            {/* Header (semáforo + título + ações) */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-black/5 bg-white/35 backdrop-blur">
-              {/* Semáforo */}
-              <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full bg-[#FF5F57] border border-black/10" />
-                <span className="h-3 w-3 rounded-full bg-[#FEBC2E] border border-black/10" />
-                <span className="h-3 w-3 rounded-full bg-[#28C840] border border-black/10" />
-              </div>
-
-              <div className="flex flex-col">
-                <div className="text-[13px] font-semibold text-zinc-900 leading-none">Folha Única</div>
-                <div className="text-[11px] text-zinc-600 leading-none mt-1">
-                  Salvo às {nowTimeLabel(savedAt)}
-                </div>
-              </div>
-
-              <div className="ml-auto">{topRightMenu}</div>
-            </div>
-
-            {/* Conteúdo */}
-            <div className="p-4">
-              {/* Título */}
-              <div className="mb-3">
-                <input
-                  value={title}
-                  onChange={(e) => onTitleChange(e.target.value)}
-                  placeholder="Título (opcional)…"
-                  className={[
-                    "w-full rounded-2xl border border-black/10 bg-white/45 backdrop-blur px-4 py-3",
-                    "text-[14px] text-zinc-900 placeholder:text-zinc-500 outline-none",
-                    titleShake ? "shake" : "",
-                  ].join(" ")}
-                  maxLength={21} // deixa passar 1 só pra disparar o shake, mas a state limita em 20
-                />
-                <div className="mt-1 text-[11px] text-zinc-600 flex items-center justify-between">
-                  <span>Ctrl+B / Ctrl+I / Ctrl+U</span>
-                  <span>{Math.min(title.length, 20)}/20</span>
-                </div>
-              </div>
-
-              {/* Editor */}
-              <div className="rounded-3xl border border-black/10 bg-white/45 backdrop-blur p-3">
-                <div
-                  ref={editorRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onInput={onEditorInput}
-                  onKeyDown={onEditorKeyDown}
-                  onFocus={() => {
-                    setShowHistory(false);
-                    // não fecha format automaticamente pra não irritar
-                  }}
-                  className="min-h-[260px] max-h-[360px] overflow-auto px-2 py-2 outline-none text-[15px] leading-6"
-                  style={{ color: fg }}
-                  data-placeholder="Escreva aqui… (use * ou - + espaço para lista)"
-                />
-              </div>
-
-              <div className="mt-3 text-[11px] text-zinc-700">
-                Dica: digite <b>*</b> ou <b>-</b> + espaço no início para lista. Tab indenta. Dois Enter saem da lista.
-              </div>
-            </div>
+    <div className="min-h-screen w-full bg-zinc-50 flex items-center justify-center p-6">
+      {/* Folha Única */}
+      <div
+        className="folha group relative"
+        style={{
+          backgroundColor: bg,
+          color,
+        }}
+      >
+        {/* Header: [Semáforo] [Título central] [Botões direita] */}
+        <div className="folha-header">
+          {/* Semáforo */}
+          <div className="flex items-center gap-2">
+            <span className="dot dot-red" />
+            <span className="dot dot-yellow" />
+            <span className="dot dot-green" />
           </div>
 
-          {/* mini legenda embaixo (opcional) */}
-          <div className="text-center text-[12px] text-zinc-500 mt-6">
-            Sticky-notes com cara de Apple — autosave e histórico no localStorage.
+          {/* Título (invisível) */}
+          <div className="flex-1 flex justify-center px-3">
+            <input
+              value={title}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              placeholder="Sem Título"
+              className={`title-input ${shake ? "shake" : ""}`}
+              spellCheck={false}
+              aria-label="Título"
+            />
           </div>
+
+          {/* Botões direita (mesmo tamanho do semáforo) */}
+          <div className="right-actions">
+            {/* Settings */}
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button className="icon-btn" aria-label="Configurações">
+                  <Settings2 size={14} strokeWidth={1.5} />
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  side="right"
+                  align="start"
+                  sideOffset={10}
+                  className="popover popover-horizontal"
+                >
+                  {/* Fundo */}
+                  <div className="popover-row">
+                    <span className="popover-label">Fundo</span>
+                    <div className="flex items-center gap-2">
+                      {BG_COLORS.map((c) => (
+                        <button
+                          key={c.value}
+                          className={`swatch ${bg === c.value ? "swatch-active" : ""}`}
+                          style={{ backgroundColor: c.value }}
+                          onClick={() => setBg(c.value)}
+                          aria-label={`Fundo ${c.name}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Texto */}
+                  <div className="popover-row">
+                    <span className="popover-label">Texto</span>
+                    <div className="flex items-center gap-2">
+                      {TEXT_COLORS.map((c) => (
+                        <button
+                          key={c.value}
+                          className={`swatch ${color === c.value ? "swatch-active" : ""}`}
+                          style={{ backgroundColor: c.value }}
+                          onClick={() => setColor(c.value)}
+                          aria-label={`Texto ${c.name}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Estilo */}
+                  <div className="popover-row">
+                    <span className="popover-label">Estilo</span>
+                    <div className="flex items-center gap-2">
+                      <button className="fmt-btn" onClick={() => applyCmd("bold")} aria-label="Negrito">
+                        <Bold size={14} strokeWidth={1.5} />
+                      </button>
+                      <button className="fmt-btn" onClick={() => applyCmd("italic")} aria-label="Itálico">
+                        <Italic size={14} strokeWidth={1.5} />
+                      </button>
+                      <button className="fmt-btn" onClick={() => applyCmd("underline")} aria-label="Sublinhado">
+                        <Underline size={14} strokeWidth={1.5} />
+                      </button>
+                    </div>
+                  </div>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+
+            {/* Plus */}
+            <button className="icon-btn" onClick={newNote} aria-label="Nova nota">
+              <Plus size={14} strokeWidth={1.5} />
+            </button>
+
+            {/* History */}
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button className="icon-btn" aria-label="Histórico">
+                  <Clock size={14} strokeWidth={1.5} />
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content side="right" align="end" sideOffset={10} className="popover popover-vertical">
+                  <div className="history-title">Histórico</div>
+
+                  <ScrollArea.Root className="history-scroll">
+                    <ScrollArea.Viewport className="history-viewport">
+                      <div className="history-list">
+                        {history.length === 0 ? (
+                          <div className="history-empty">Sem notas ainda.</div>
+                        ) : (
+                          history.map((h) => (
+                            <button
+                              key={h.id}
+                              className="history-item"
+                              onClick={() => loadFromHistory(h)}
+                              title={h.title}
+                            >
+                              <span className="history-item-title">{clampTitle(h.title)}</span>
+                              <span className="history-item-time">{nowTimeLabel(h.updatedAt)}</span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </ScrollArea.Viewport>
+                    <ScrollArea.Scrollbar className="history-scrollbar" orientation="vertical">
+                      <ScrollArea.Thumb className="history-thumb" />
+                    </ScrollArea.Scrollbar>
+                  </ScrollArea.Root>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+          </div>
+        </div>
+
+        {/* Editor (sem bordas internas / folha contínua) */}
+        <div
+          ref={editorRef}
+          className="editor"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleEditorInput}
+          onKeyDown={handleEditorKeyDown}
+          data-placeholder="Escreva..."
+          aria-label="Editor"
+        />
+
+        {/* Status ultra discreto (opcional) */}
+        <div className="status">
+          Salvo às {nowTimeLabel(updatedAt)}
         </div>
       </div>
     </div>
