@@ -1,66 +1,81 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-const STORAGE_KEY = "ecosystem-notes:note:v1";
+const STORAGE_KEY = "ecosystem-notes:note";
+
+function formatTime(d: Date) {
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 export default function App() {
   const [note, setNote] = useState("");
-  const [status, setStatus] = useState<"salvo" | "editando">("salvo");
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
   // Carrega do localStorage
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved !== null) setNote(saved);
-    // foco automático
-    setTimeout(() => textareaRef.current?.focus(), 50);
   }, []);
 
-  // Autosave (debounce simples)
+  // Auto-save (debounce simples)
   useEffect(() => {
-    setStatus("editando");
-    const id = setTimeout(() => {
+    const t = setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, note);
-      setStatus("salvo");
-    }, 400);
-
-    return () => clearTimeout(id);
+      setLastSavedAt(new Date());
+    }, 350);
+    return () => clearTimeout(t);
   }, [note]);
 
-  const counter = useMemo(() => {
-    const chars = note.length;
-    const words = note.trim() ? note.trim().split(/\s+/).length : 0;
-    return { chars, words };
-  }, [note]);
+  const savedLabel = useMemo(() => {
+    if (!lastSavedAt) return "Ainda não salvo";
+    return `Salvo às ${formatTime(lastSavedAt)}`;
+  }, [lastSavedAt]);
+
+  const clear = () => {
+    setNote("");
+    localStorage.removeItem(STORAGE_KEY);
+    setLastSavedAt(new Date());
+  };
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4">
-      <div className="w-full max-w-[420px] rounded-3xl border border-black/10 shadow-sm">
-        <div className="px-6 pt-5 pb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🗒️</span>
-            <h1 className="text-sm font-semibold tracking-tight">Notas</h1>
+    <div className="min-h-screen bg-[#F5F5F7] text-zinc-900">
+      {/* Header */}
+      <header className="mx-auto max-w-[820px] px-6 pt-10 pb-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Notas</h1>
+            <p className="mt-1 text-sm text-zinc-500">{savedLabel}</p>
           </div>
 
-          <div className="text-xs text-black/50">
-            {status === "salvo" ? "Salvo" : "Editando…"}
+          <button
+            onClick={clear}
+            className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 active:scale-[0.98]"
+            title="Limpar nota"
+          >
+            Limpar
+          </button>
+        </div>
+      </header>
+
+      {/* Card */}
+      <main className="mx-auto max-w-[820px] px-6 pb-12">
+        <div className="rounded-3xl border border-zinc-200 bg-white shadow-sm">
+          <div className="border-b border-zinc-100 px-6 py-4">
+            <p className="text-sm font-medium text-zinc-700">Nota rápida</p>
+          </div>
+
+          <div className="p-4 sm:p-6">
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Escreva aqui…"
+              className="w-full min-h-[360px] resize-none bg-transparent text-[15px] leading-7 text-zinc-900 placeholder:text-zinc-400 outline-none"
+            />
+            <p className="mt-3 text-xs text-zinc-500">
+              Salva automaticamente no seu navegador (localStorage).
+            </p>
           </div>
         </div>
-
-        <div className="px-6 pb-2">
-          <textarea
-            ref={textareaRef}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Escreva aqui…"
-            className="w-full h-[320px] resize-none bg-transparent outline-none text-[15px] leading-6 placeholder:text-black/30"
-          />
-        </div>
-
-        <div className="px-6 pb-5 flex items-center justify-between text-xs text-black/45">
-          <span>{counter.words} palavras</span>
-          <span>{counter.chars} caracteres</span>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }
