@@ -9,7 +9,7 @@
   border-radius: 18px;
   overflow: hidden;
   user-select: none;
-  touch-action: none; /* importante para drag/resize no touch */
+  touch-action: none;
   transition: box-shadow 140ms ease, transform 140ms ease;
 }
 
@@ -18,7 +18,7 @@
   box-shadow: 0 28px 90px rgba(0, 0, 0, 0.16);
 }
 .folha-blur {
-  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.10);
 }
 
 /* header em linha única */
@@ -43,17 +43,11 @@
   height: 10px;
   border-radius: 999px;
   display: inline-block;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
 }
-.dot-red {
-  background: #ff5f57;
-}
-.dot-yellow {
-  background: #febc2e;
-}
-.dot-green {
-  background: #28c840;
-}
+.dot-red { background: #ff5f57; }
+.dot-yellow { background: #febc2e; }
+.dot-green { background: #28c840; }
 
 /* título quase invisível */
 .title-input {
@@ -65,40 +59,26 @@
   outline: none;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(0, 0, 0, 0.18);
+  color: rgba(0,0,0,0.18);
 }
 .folha:hover .title-input {
-  color: rgba(0, 0, 0, 0.55);
+  color: rgba(0,0,0,0.55);
 }
 .title-input::placeholder {
-  color: rgba(0, 0, 0, 0);
+  color: rgba(0,0,0,0.00);
   transition: color 120ms ease;
 }
 .folha:hover .title-input::placeholder {
-  color: rgba(0, 0, 0, 0.32);
+  color: rgba(0,0,0,0.32);
 }
-.shake {
-  animation: shake 0.26s ease-in-out;
-}
+.shake { animation: shake 0.26s ease-in-out; }
 @keyframes shake {
-  0% {
-    transform: translateX(0);
-  }
-  20% {
-    transform: translateX(-3px);
-  }
-  40% {
-    transform: translateX(3px);
-  }
-  60% {
-    transform: translateX(-2px);
-  }
-  80% {
-    transform: translateX(2px);
-  }
-  100% {
-    transform: translateX(0);
-  }
+  0% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+  100% { transform: translateX(0); }
 }
 
 /* botões direita */
@@ -123,12 +103,10 @@
 
 /* mobile sempre visível 50% */
 @media (hover: none), (pointer: coarse) {
-  .right-actions {
-    opacity: 0.5;
-  }
+  .right-actions { opacity: 0.5; }
 }
 
-/* botão redondo mini (mesmo peso do semáforo) */
+/* botão redondo mini */
 .icon-btn {
   width: 22px;
   height: 22px;
@@ -136,13 +114,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  color: rgba(0, 0, 0, 0.55);
+  background: rgba(255,255,255,0.0);
+  border: 1px solid rgba(0,0,0,0.08);
+  color: rgba(0,0,0,0.55);
   transition: background 120ms ease;
 }
 .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.55);
+  background: rgba(255,255,255,0.55);
 }
 
 /* editor */
@@ -159,25 +137,23 @@
 }
 .editor:empty::before {
   content: attr(data-placeholder);
-  color: rgba(0, 0, 0, 0.3);
+  color: rgba(0,0,0,0.30);
 }
 
 /* popovers */
 .popover {
-  background: rgba(255, 255, 255, 0.85);
+  background: rgba(255,255,255,0.85);
   backdrop-filter: blur(10px);
   border-radius: 14px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.12);
   padding: 10px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0,0,0,0.10);
+  z-index: 99999;
 }
-.popover-horizontal {
-  min-width: 360px;
-}
-.popover-vertical {
-  width: 260px;
-  padding: 10px;
-}
+
+/* MESMA LARGURA (engrenagem = histórico) */
+.popover-horizontal { width: 260px; min-width: 260px; }
+.popover-vertical { width: 260px; padding: 10px; }
 
 .popover-row {
   display: flex;
@@ -188,28 +164,33 @@
 }
 .popover-label {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.5);
-  width: 44px;
+  color: rgba(0,0,0,0.50);
+  width: 48px;
 }
 
-/* ====== SWATCHES (círculos puros, sem moldura) ====== */
+/* ====== SWATCHES (círculos puros, com sombra para o cinza aparecer) ====== */
 .swatch {
   width: 16px;
   height: 16px;
   border-radius: 999px;
   border: none;
   outline: none;
-  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.08); /* “blur” orgânico */
+  box-shadow:
+    0 1px 10px rgba(0,0,0,0.10),
+    inset 0 0 0 1px rgba(0,0,0,0.06);
   transition: transform 100ms ease, box-shadow 120ms ease;
 }
 .swatch:hover {
   transform: scale(1.08);
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 2px 14px rgba(0,0,0,0.14),
+    inset 0 0 0 1px rgba(0,0,0,0.06);
 }
-/* ativo sem “contorno”: só eleva e dá mais presença */
 .swatch-active {
   transform: scale(1.12);
-  box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
+  box-shadow:
+    0 3px 16px rgba(0,0,0,0.18),
+    inset 0 0 0 1px rgba(0,0,0,0.06);
 }
 
 /* ====== B/I/U mini do mesmo diâmetro das bolinhas ====== */
@@ -218,23 +199,23 @@
   height: 16px;
   border-radius: 999px;
   border: none;
-  background: rgba(0, 0, 0, 0.06);
-  color: rgba(0, 0, 0, 0.7);
+  background: rgba(0,0,0,0.06);
+  color: rgba(0,0,0,0.70);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 10px rgba(0,0,0,0.10);
 }
 .fmt-dot:hover {
-  background: rgba(0, 0, 0, 0.09);
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  background: rgba(0,0,0,0.09);
+  box-shadow: 0 2px 14px rgba(0,0,0,0.14);
 }
 
 /* history */
 .history-title {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.6);
+  color: rgba(0,0,0,0.60);
   padding: 4px 6px 8px 6px;
 }
 .history-scroll {
@@ -242,9 +223,7 @@
   overflow: hidden;
   border-radius: 12px;
 }
-.history-viewport {
-  height: 100%;
-}
+.history-viewport { height: 100%; }
 .history-list {
   display: flex;
   flex-direction: column;
@@ -256,97 +235,43 @@
   text-align: left;
   border-radius: 10px;
   padding: 8px 10px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.55);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
-.history-item:hover {
-  background: rgba(255, 255, 255, 0.85);
-}
+.history-item:hover { background: rgba(255,255,255,0.85); }
 .history-item-title {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.7);
+  color: rgba(0,0,0,0.70);
   max-width: 170px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.history-item-time {
-  font-size: 11px;
-  color: rgba(0, 0, 0, 0.4);
-}
-.history-empty {
-  padding: 10px;
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.45);
-}
-.history-scrollbar {
-  width: 10px;
-  padding: 2px;
-}
-.history-thumb {
-  background: rgba(0, 0, 0, 0.18);
-  border-radius: 999px;
-}
+.history-item-time { font-size: 11px; color: rgba(0,0,0,0.40); }
+.history-scrollbar { width: 10px; padding: 2px; }
+.history-thumb { background: rgba(0,0,0,0.18); border-radius: 999px; }
 
 /* ========= Resize handles (8 eixos) ========= */
+/* AUMENTADOS para ficar fácil pegar — inclusive ESQUERDA */
 .handle {
   position: absolute;
-  z-index: 9999;
+  z-index: 999999;
   background: transparent;
+  pointer-events: auto;
 }
 
-/* lados */
-.handle-n {
-  top: -6px;
-  left: 10px;
-  right: 10px;
-  height: 12px;
-}
-.handle-s {
-  bottom: -6px;
-  left: 10px;
-  right: 10px;
-  height: 12px;
-}
-.handle-e {
-  right: -6px;
-  top: 10px;
-  bottom: 10px;
-  width: 12px;
-}
-.handle-w {
-  left: -6px;
-  top: 10px;
-  bottom: 10px;
-  width: 12px;
-}
+/* lados (área maior) */
+.handle-n { top: -10px; left: 10px; right: 10px; height: 20px; cursor: n-resize; }
+.handle-s { bottom: -10px; left: 10px; right: 10px; height: 20px; cursor: s-resize; }
+.handle-e { right: -10px; top: 10px; bottom: 10px; width: 20px; cursor: e-resize; }
+.handle-w { left: -10px; top: 10px; bottom: 10px; width: 20px; cursor: w-resize; }
 
 /* cantos */
-.handle-nw {
-  left: -6px;
-  top: -6px;
-  width: 14px;
-  height: 14px;
-}
-.handle-ne {
-  right: -6px;
-  top: -6px;
-  width: 14px;
-  height: 14px;
-}
-.handle-sw {
-  left: -6px;
-  bottom: -6px;
-  width: 14px;
-  height: 14px;
-}
-.handle-se {
-  right: -6px;
-  bottom: -6px;
-  width: 14px;
-  height: 14px;
-}
+.handle-nw { left: -10px; top: -10px; width: 22px; height: 22px; cursor: nw-resize; }
+.handle-ne { right: -10px; top: -10px; width: 22px; height: 22px; cursor: ne-resize; }
+.handle-sw { left: -10px; bottom: -10px; width: 22px; height: 22px; cursor: sw-resize; }
+.handle-se { right: -10px; bottom: -10px; width: 22px; height: 22px; cursor: se-resize; }

@@ -1,14 +1,14 @@
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import * as ScrollArea from "@radix-ui/react-scroll-area";
-import { Clock, Plus, Settings2, Bold, Italic, Underline } from "lucide-react";
+import { Settings, Plus, Clock } from "lucide-react";
 
-type NoteData = {
+type Note = {
   id: string;
   title: string;
   html: string;
   bg: string;
-  color: string;
+  fg: string;
   x: number;
   y: number;
   w: number;
@@ -17,32 +17,26 @@ type NoteData = {
   updatedAt: number;
 };
 
-const STORAGE_NOTES = "folhaUnica.notes.v2";
-const STORAGE_Z = "folhaUnica.zTop.v2";
-const STORAGE_ACTIVE = "folhaUnica.activeId.v2";
+const STORAGE_KEY = "folha_unica_notes_v1";
 
 const BG_COLORS = [
-  { name: "Padrão", value: "#F7F7F7" },
+  { name: "Cinza", value: "#F7F7F7" }, // padrão
   { name: "Creme", value: "#F7E7CD" },
   { name: "Coral", value: "#FAD0C4" },
   { name: "Menta", value: "#D4EFDF" },
   { name: "Névoa", value: "#D6EAF8" },
-] as const;
+];
 
-const TEXT_COLORS = [
-  { name: "Chumbo", value: "#333333" },
+const FG_COLORS = [
+  { name: "Chumbo", value: "#333333" }, // padrão
   { name: "Rosa", value: "#C71585" },
   { name: "Azul", value: "#0047AB" },
   { name: "Laranja", value: "#FF8C00" },
   { name: "Verde", value: "#228B22" },
-] as const;
+];
 
-function uid() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-function clampTitle(raw: string) {
-  return raw.slice(0, 20);
-}
+const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+
 function nowTimeLabel(ts: number) {
   const d = new Date(ts);
   const hh = String(d.getHours()).padStart(2, "0");
@@ -50,514 +44,690 @@ function nowTimeLabel(ts: number) {
   return `${hh}:${mm}`;
 }
 
-type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
-type DragState =
-  | { type: "drag"; id: string; startX: number; startY: number; baseX: number; baseY: number }
-  | {
-      type: "resize";
-      id: string;
-      dir: ResizeDir;
-      startX: number;
-      startY: number;
-      baseX: number;
-      baseY: number;
-      baseW: number;
-      baseH: number;
-    }
-  | null;
-
-const MIN_W = 260;
-const MIN_H = 220;
-
-function cursorForDir(dir: ResizeDir) {
-  switch (dir) {
-    case "n":
-    case "s":
-      return "ns-resize";
-    case "e":
-    case "w":
-      return "ew-resize";
-    case "ne":
-    case "sw":
-      return "nesw-resize";
-    case "nw":
-    case "se":
-      return "nwse-resize";
-  }
+function uid() {
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
-export default function App() {
-  const [notes, setNotes] = useState<NoteData[]>([]);
-  const [activeId, setActiveId] = useState<string>("");
-  const [zTop, setZTop] = useState<number>(10);
+type ResizeDir = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
-  const dragRef = useRef<DragState>(null);
+export default function App() {
+  const [notes, setNotes] = useState<Note[]>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as Note[];
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
+    } catch {
+      return [];
+    }
+  });
+
+  const [activeId, setActiveId] = useState<string | null>(() => {
+    const first = (() => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? (JSON.parse(raw) as Note[]) : [];
+        return parsed?.[0]?.id ?? null;
+      } catch {
+        return null;
+      }
+    })();
+    return first;
+  });
+
+  // refs por nota (editor)
   const editorRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const maxZ = useMemo(() => notes.reduce((m, n) => Math.max(m, n.z), 0), [notes]);
+
+  // Persistência
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+  }, [notes]);
+
+  // Se não houver notas, cria a primeira automaticamente
+  useEffect(() => {
+    if (notes.length === 0) {
+      const first: Note = {
+        id: uid(),
+        title: "",
+        html: "",
+        bg: "#F7F7F7",
+        fg: "#333333",
+        x: 60,
+        y: 80,
+        w: 320,
+        h: 360,
+        z: 1,
+        updatedAt: Date.now(),
+      };
+      setNotes([first]);
+      setActiveId(first.id);
+    } else if (!activeId) {
+      setActiveId(notes[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeNote = useMemo(() => notes.find((n) => n.id === activeId) ?? null, [notes, activeId]);
 
-  useEffect(() => {
-    try {
-      const z = localStorage.getItem(STORAGE_Z);
-      if (z) setZTop(Number(z) || 10);
-    } catch {}
+  // Estado de drag
+  const dragState = useRef<{
+    id: string;
+    startX: number;
+    startY: number;
+    noteX: number;
+    noteY: number;
+  } | null>(null);
 
-    try {
-      const raw = localStorage.getItem(STORAGE_NOTES);
-      const act = localStorage.getItem(STORAGE_ACTIVE);
-      if (raw) {
-        const parsed = JSON.parse(raw) as NoteData[];
-        setNotes(parsed);
-        if (act && parsed.some((n) => n.id === act)) setActiveId(act);
-        else if (parsed[0]) setActiveId(parsed[0].id);
-        return;
-      }
-    } catch {}
+  // Estado de resize
+  const resizeState = useRef<{
+    id: string;
+    dir: ResizeDir;
+    startX: number;
+    startY: number;
+    noteX: number;
+    noteY: number;
+    noteW: number;
+    noteH: number;
+  } | null>(null);
 
-    const first: NoteData = {
-      id: uid(),
-      title: "",
-      html: "",
-      bg: BG_COLORS[0].value,
-      color: TEXT_COLORS[0].value,
-      x: 120,
-      y: 90,
-      w: 520,
-      h: 520,
-      z: 10,
-      updatedAt: Date.now(),
-    };
-    setNotes([first]);
-    setActiveId(first.id);
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_NOTES, JSON.stringify(notes));
-      localStorage.setItem(STORAGE_Z, String(zTop));
-      if (activeId) localStorage.setItem(STORAGE_ACTIVE, activeId);
-    } catch {}
-  }, [notes, zTop, activeId]);
-
-  const bringToFront = (id: string) => {
+  function bringToFront(id: string) {
     setNotes((prev) => {
-      const maxZ = Math.max(zTop, ...prev.map((n) => n.z));
-      const nextZ = maxZ + 1;
-      setZTop(nextZ);
-      return prev.map((n) => (n.id === id ? { ...n, z: nextZ } : n));
+      const zTop = prev.reduce((m, n) => Math.max(m, n.z), 0) + 1;
+      return prev.map((n) => (n.id === id ? { ...n, z: zTop } : n));
     });
     setActiveId(id);
-  };
+  }
 
-  const updateNote = (id: string, patch: Partial<NoteData>) => {
+  function createNewNoteCascade() {
+    setNotes((prev) => {
+      const base = prev.find((n) => n.id === activeId) ?? prev[prev.length - 1];
+      const zTop = prev.reduce((m, n) => Math.max(m, n.z), 0) + 1;
+      const newNote: Note = {
+        id: uid(),
+        title: "",
+        html: "",
+        bg: "#F7F7F7",
+        fg: "#333333",
+        x: (base?.x ?? 60) + 18,
+        y: (base?.y ?? 80) + 18,
+        w: Math.max(280, base?.w ?? 320),
+        h: Math.max(300, base?.h ?? 360),
+        z: zTop,
+        updatedAt: Date.now(),
+      };
+      // foco na nova
+      setTimeout(() => {
+        setActiveId(newNote.id);
+        const el = editorRefs.current[newNote.id];
+        el?.focus();
+      }, 0);
+      return [...prev, newNote];
+    });
+  }
+
+  function clearActiveNote() {
+    if (!activeNote) return;
+    setNotes((prev) =>
+      prev.map((n) =>
+        n.id === activeNote.id ? { ...n, title: "", html: "", updatedAt: Date.now() } : n
+      )
+    );
+    setTimeout(() => editorRefs.current[activeNote.id]?.focus(), 0);
+  }
+
+  function updateNote(id: string, patch: Partial<Note>) {
     setNotes((prev) => prev.map((n) => (n.id === id ? { ...n, ...patch } : n)));
-  };
+  }
 
-  const applyCmd = (id: string, cmd: "bold" | "italic" | "underline") => {
+  // ==== Drag handlers ====
+  function onDragPointerDown(e: React.PointerEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
     bringToFront(id);
-    editorRefs.current[id]?.focus();
-    document.execCommand(cmd);
-    updateNote(id, { updatedAt: Date.now(), html: editorRefs.current[id]?.innerHTML ?? "" });
-  };
 
-  const isInList = () => {
+    const note = notes.find((n) => n.id === id);
+    if (!note) return;
+
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragState.current = {
+      id,
+      startX: e.clientX,
+      startY: e.clientY,
+      noteX: note.x,
+      noteY: note.y,
+    };
+  }
+
+  function onResizePointerDown(e: React.PointerEvent, id: string, dir: ResizeDir) {
+    e.preventDefault();
+    e.stopPropagation();
+    bringToFront(id);
+
+    const note = notes.find((n) => n.id === id);
+    if (!note) return;
+
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    resizeState.current = {
+      id,
+      dir,
+      startX: e.clientX,
+      startY: e.clientY,
+      noteX: note.x,
+      noteY: note.y,
+      noteW: note.w,
+      noteH: note.h,
+    };
+  }
+
+  function onGlobalPointerMove(e: PointerEvent) {
+    // Drag
+    if (dragState.current) {
+      const s = dragState.current;
+      const dx = e.clientX - s.startX;
+      const dy = e.clientY - s.startY;
+      updateNote(s.id, {
+        x: s.noteX + dx,
+        y: s.noteY + dy,
+      });
+      return;
+    }
+
+    // Resize
+    if (resizeState.current) {
+      const s = resizeState.current;
+      const dx = e.clientX - s.startX;
+      const dy = e.clientY - s.startY;
+
+      const MIN_W = 260;
+      const MIN_H = 240;
+
+      let x = s.noteX;
+      let y = s.noteY;
+      let w = s.noteW;
+      let h = s.noteH;
+
+      const dir = s.dir;
+
+      // horizontais
+      if (dir.includes("e")) {
+        w = clamp(s.noteW + dx, MIN_W, 900);
+      }
+      if (dir.includes("w")) {
+        const newW = clamp(s.noteW - dx, MIN_W, 900);
+        const delta = newW - s.noteW;
+        w = newW;
+        x = s.noteX - delta;
+      }
+
+      // verticais
+      if (dir.includes("s")) {
+        h = clamp(s.noteH + dy, MIN_H, 900);
+      }
+      if (dir.includes("n")) {
+        const newH = clamp(s.noteH - dy, MIN_H, 900);
+        const delta = newH - s.noteH;
+        h = newH;
+        y = s.noteY - delta;
+      }
+
+      updateNote(s.id, { x, y, w, h });
+    }
+  }
+
+  function onGlobalPointerUp() {
+    dragState.current = null;
+    resizeState.current = null;
+  }
+
+  useEffect(() => {
+    window.addEventListener("pointermove", onGlobalPointerMove);
+    window.addEventListener("pointerup", onGlobalPointerUp);
+    return () => {
+      window.removeEventListener("pointermove", onGlobalPointerMove);
+      window.removeEventListener("pointerup", onGlobalPointerUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notes]);
+
+  // ==== Rich text helpers ====
+  function exec(cmd: "bold" | "italic" | "underline") {
+    document.execCommand(cmd);
+    // salva html imediatamente
+    if (activeNote) {
+      const el = editorRefs.current[activeNote.id];
+      if (el) updateNote(activeNote.id, { html: el.innerHTML, updatedAt: Date.now() });
+    }
+  }
+
+  function applyForeColor(color: string) {
+    // aplica na seleção (se houver); se não houver, muda a cor base do editor (note.fg)
+    try {
+      document.execCommand("styleWithCSS", false, "true");
+      document.execCommand("foreColor", false, color);
+    } catch {
+      // ok
+    }
+    if (activeNote) {
+      const el = editorRefs.current[activeNote.id];
+      if (el) updateNote(activeNote.id, { html: el.innerHTML, fg: color, updatedAt: Date.now() });
+      else updateNote(activeNote.id, { fg: color, updatedAt: Date.now() });
+    }
+  }
+
+  function inListSelection() {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return false;
-    let node: Node | null = sel.anchorNode;
-    while (node) {
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as HTMLElement;
-        if (el.tagName === "LI") return true;
-      }
-      node = node.parentNode;
-    }
-    return false;
-  };
+    const node = sel.anchorNode as Node | null;
+    if (!node) return false;
+    const el = (node.nodeType === 1 ? (node as Element) : node.parentElement) as Element | null;
+    if (!el) return false;
+    return !!el.closest("li, ul, ol");
+  }
 
-  const getClosestLI = () => {
+  function currentLineStartsWithDashOrStar() {
     const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return null;
-    let node: Node | null = sel.anchorNode;
-    while (node) {
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as HTMLElement;
-        if (el.tagName === "LI") return el;
-      }
-      node = node.parentNode;
-    }
-    return null;
-  };
+    if (!sel || sel.rangeCount === 0) return false;
 
-  const tryConvertToList = (id: string) => {
+    const range = sel.getRangeAt(0).cloneRange();
+    range.collapse(true);
+
+    // pega o texto do bloco atual (heurística)
+    const container = range.startContainer;
+    const block =
+      (container.nodeType === 1 ? (container as Element) : container.parentElement)?.closest(
+        "div, p, li"
+      ) ?? null;
+    const text = block?.textContent ?? "";
+
+    // início com "* " ou "- "
+    return text.trimStart().startsWith("* ") || text.trimStart().startsWith("- ");
+  }
+
+  function removeLeadingMarkerInCurrentLine() {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
 
     const range = sel.getRangeAt(0);
     const container = range.startContainer;
-
-    let el: Node | null = container;
-    while (el && el !== editorRefs.current[id] && el.parentNode) {
-      if (el.nodeType === Node.ELEMENT_NODE) {
-        const ht = el as HTMLElement;
-        if (ht.tagName === "DIV" || ht.tagName === "P") break;
-      }
-      el = el.parentNode;
-    }
-
-    const block = (el && el.nodeType === Node.ELEMENT_NODE ? (el as HTMLElement) : editorRefs.current[id]) as
-      | HTMLElement
-      | null;
+    const block =
+      (container.nodeType === 1 ? (container as Element) : container.parentElement)?.closest(
+        "div, p, li"
+      ) ?? null;
     if (!block) return;
 
-    const text = (block.textContent ?? "").replace(/\u00A0/g, " ");
-    if (text === "*" || text === "-" || text === "* " || text === "- ") {
-      block.textContent = "";
-      document.execCommand("insertUnorderedList");
+    // remove apenas no começo
+    const raw = block.textContent ?? "";
+    const cleaned = raw.replace(/^\s*[\*\-]\s+/, "");
+    if (cleaned !== raw) {
+      block.textContent = cleaned;
+      // move cursor pro fim do bloco
+      const r = document.createRange();
+      r.selectNodeContents(block);
+      r.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(r);
     }
-  };
+  }
 
-  const handleEditorKeyDown = (id: string, e: React.KeyboardEvent<HTMLDivElement>) => {
-    const meta = e.metaKey || e.ctrlKey;
-
-    if (meta && (e.key === "b" || e.key === "B")) {
-      e.preventDefault();
-      applyCmd(id, "bold");
-      return;
-    }
-    if (meta && (e.key === "i" || e.key === "I")) {
-      e.preventDefault();
-      applyCmd(id, "italic");
-      return;
-    }
-    if (meta && (e.key === "u" || e.key === "U")) {
-      e.preventDefault();
-      applyCmd(id, "underline");
-      return;
-    }
-
-    if (e.key === "Tab") {
-      if (isInList()) {
+  function handleEditorKeyDown(e: React.KeyboardEvent<HTMLDivElement>, noteId: string) {
+    // atalhos
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      const k = e.key.toLowerCase();
+      if (k === "b") {
         e.preventDefault();
-        document.execCommand(e.shiftKey ? "outdent" : "indent");
-        updateNote(id, { updatedAt: Date.now(), html: editorRefs.current[id]?.innerHTML ?? "" });
+        exec("bold");
+        return;
       }
-      return;
+      if (k === "i") {
+        e.preventDefault();
+        exec("italic");
+        return;
+      }
+      if (k === "u") {
+        e.preventDefault();
+        exec("underline");
+        return;
+      }
     }
 
-    if (e.key === " ") {
-      window.setTimeout(() => {
-        tryConvertToList(id);
-        updateNote(id, { updatedAt: Date.now(), html: editorRefs.current[id]?.innerHTML ?? "" });
-      }, 0);
-      return;
+    // Tab para indent/outdent em listas
+    if (e.key === "Tab") {
+      if (inListSelection()) {
+        e.preventDefault();
+        if (e.shiftKey) document.execCommand("outdent");
+        else document.execCommand("indent");
+        return;
+      }
     }
 
+    // Enter: regra dos “dois enter saem da lista” (heurística)
     if (e.key === "Enter") {
-      if (isInList()) {
-        const li = getClosestLI();
-        const empty = !li || (li.textContent ?? "").trim() === "";
-        if (empty) {
+      if (inListSelection()) {
+        const sel = window.getSelection();
+        const node = sel?.anchorNode;
+        const li = (node?.nodeType === 1 ? (node as Element) : node?.parentElement)?.closest("li");
+        const isEmpty = (li?.textContent ?? "").trim() === "";
+
+        if (isEmpty) {
           e.preventDefault();
-          document.execCommand("insertParagraph");
+          // sair da lista
           document.execCommand("outdent");
-          updateNote(id, { updatedAt: Date.now(), html: editorRefs.current[id]?.innerHTML ?? "" });
+          document.execCommand("insertParagraph");
+          return;
         }
       }
+    }
+
+    // Espaço: se começar com * ou - vira lista
+    if (e.key === " " || e.code === "Space") {
+      // só se a linha atual começar com marcador
+      if (currentLineStartsWithDashOrStar()) {
+        // transforma em lista
+        e.preventDefault();
+        removeLeadingMarkerInCurrentLine();
+        document.execCommand("insertUnorderedList");
+        return;
+      }
+    }
+  }
+
+  function handleEditorInput(noteId: string) {
+    const el = editorRefs.current[noteId];
+    if (!el) return;
+    updateNote(noteId, { html: el.innerHTML, updatedAt: Date.now() });
+  }
+
+  // título: limite 20 + shake
+  const [shakeIds, setShakeIds] = useState<Record<string, boolean>>({});
+
+  function setShake(id: string) {
+    setShakeIds((p) => ({ ...p, [id]: true }));
+    window.setTimeout(() => {
+      setShakeIds((p) => ({ ...p, [id]: false }));
+    }, 260);
+  }
+
+  function onTitleChange(id: string, value: string) {
+    if (value.length > 20) {
+      setShake(id);
       return;
     }
-  };
+    updateNote(id, { title: value, updatedAt: Date.now() });
+  }
 
-  const handleEditorInput = (id: string) => {
-    updateNote(id, { updatedAt: Date.now(), html: editorRefs.current[id]?.innerHTML ?? "" });
-  };
-
-  const newNoteCascade = () => {
-    const base = activeNote ?? notes[notes.length - 1];
-    const baseX = base ? base.x : 120;
-    const baseY = base ? base.y : 90;
-
-    const maxZ = Math.max(zTop, ...notes.map((n) => n.z));
-    const nextZ = maxZ + 1;
-    setZTop(nextZ);
-
-    const n: NoteData = {
-      id: uid(),
-      title: "",
-      html: "",
-      bg: BG_COLORS[0].value,
-      color: TEXT_COLORS[0].value,
-      x: baseX + 18,
-      y: baseY + 18,
-      w: base?.w ?? 520,
-      h: base?.h ?? 520,
-      z: nextZ,
-      updatedAt: Date.now(),
-    };
-
-    setNotes((prev) => [...prev, n]);
-    setActiveId(n.id);
-    window.setTimeout(() => editorRefs.current[n.id]?.focus(), 0);
-  };
-
-  const onHeaderPointerDown = (id: string, e: React.PointerEvent) => {
-    bringToFront(id);
-    const note = notes.find((n) => n.id === id);
-    if (!note) return;
-
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = {
-      type: "drag",
-      id,
-      startX: e.clientX,
-      startY: e.clientY,
-      baseX: note.x,
-      baseY: note.y,
-    };
-  };
-
-  const onResizePointerDown = (id: string, dir: ResizeDir, e: React.PointerEvent) => {
-    bringToFront(id);
-    const note = notes.find((n) => n.id === id);
-    if (!note) return;
-
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = {
-      type: "resize",
-      id,
-      dir,
-      startX: e.clientX,
-      startY: e.clientY,
-      baseX: note.x,
-      baseY: note.y,
-      baseW: note.w,
-      baseH: note.h,
-    };
-  };
-
-  const onGlobalPointerMove = (e: React.PointerEvent) => {
-    const st = dragRef.current;
-    if (!st) return;
-
-    const dx = e.clientX - st.startX;
-    const dy = e.clientY - st.startY;
-
-    if (st.type === "drag") {
-      updateNote(st.id, { x: st.baseX + dx, y: st.baseY + dy });
-      return;
-    }
-
-    if (st.type === "resize") {
-      let x = st.baseX;
-      let y = st.baseY;
-      let w = st.baseW;
-      let h = st.baseH;
-
-      const dir = st.dir;
-
-      if (dir.includes("e")) w = st.baseW + dx;
-      if (dir.includes("w")) {
-        w = st.baseW - dx;
-        x = st.baseX + dx;
-      }
-
-      if (dir.includes("s")) h = st.baseH + dy;
-      if (dir.includes("n")) {
-        h = st.baseH - dy;
-        y = st.baseY + dy;
-      }
-
-      if (w < MIN_W) {
-        if (dir.includes("w")) x -= MIN_W - w;
-        w = MIN_W;
-      }
-      if (h < MIN_H) {
-        if (dir.includes("n")) y -= MIN_H - h;
-        h = MIN_H;
-      }
-
-      updateNote(st.id, { x, y, w, h });
-    }
-  };
-
-  const onGlobalPointerUp = () => {
-    dragRef.current = null;
-  };
-
-  const [shakeMap, setShakeMap] = useState<Record<string, boolean>>({});
-  const setShake = (id: string, v: boolean) => setShakeMap((p) => ({ ...p, [id]: v }));
-
-  const handleTitleChange = (id: string, v: string) => {
-    if (v.length <= 20) {
-      updateNote(id, { title: v, updatedAt: Date.now() });
-      return;
-    }
-    updateNote(id, { title: clampTitle(v), updatedAt: Date.now() });
-    setShake(id, true);
-    window.setTimeout(() => setShake(id, false), 260);
-  };
-
-  const historySorted = useMemo(() => {
-    const copy = [...notes];
-    copy.sort((a, b) => b.updatedAt - a.updatedAt);
-    return copy.slice(0, 80);
-  }, [notes]);
-
+  // Render
   return (
-    <div className="min-h-screen w-full bg-zinc-50" onPointerMove={onGlobalPointerMove} onPointerUp={onGlobalPointerUp}>
-      {notes.map((n) => {
-        const focused = n.id === activeId;
-        return (
-          <div
-            key={n.id}
-            className={`folha ${focused ? "folha-focused" : "folha-blur"} group`}
-            style={{
-              backgroundColor: n.bg,
-              color: n.color,
-              left: n.x,
-              top: n.y,
-              width: n.w,
-              height: n.h,
-              zIndex: n.z,
-            }}
-            onMouseDown={() => bringToFront(n.id)}
-          >
-            <div className="folha-header dragbar" onPointerDown={(e) => onHeaderPointerDown(n.id, e)}>
-              <div className="flex items-center gap-2">
-                <span className="dot dot-red" />
-                <span className="dot dot-yellow" />
-                <span className="dot dot-green" />
-              </div>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "white",
+        position: "relative",
+        overflow: "hidden",
+      }}
+      onPointerDown={() => {
+        // clique fora não muda nada
+      }}
+    >
+      {notes
+        .slice()
+        .sort((a, b) => a.z - b.z)
+        .map((note) => {
+          const focused = note.id === activeId;
 
-              <div className="flex-1 flex justify-center px-3">
+          return (
+            <div
+              key={note.id}
+              className={`folha ${focused ? "folha-focused" : "folha-blur"}`}
+              style={{
+                left: note.x,
+                top: note.y,
+                width: note.w,
+                height: note.h,
+                background: note.bg,
+                zIndex: note.z,
+              }}
+              onPointerDown={() => bringToFront(note.id)}
+            >
+              {/* Resize handles (8) */}
+              <div className="handle handle-n" onPointerDown={(e) => onResizePointerDown(e, note.id, "n")} />
+              <div className="handle handle-s" onPointerDown={(e) => onResizePointerDown(e, note.id, "s")} />
+              <div className="handle handle-e" onPointerDown={(e) => onResizePointerDown(e, note.id, "e")} />
+              <div className="handle handle-w" onPointerDown={(e) => onResizePointerDown(e, note.id, "w")} />
+              <div className="handle handle-nw" onPointerDown={(e) => onResizePointerDown(e, note.id, "nw")} />
+              <div className="handle handle-ne" onPointerDown={(e) => onResizePointerDown(e, note.id, "ne")} />
+              <div className="handle handle-sw" onPointerDown={(e) => onResizePointerDown(e, note.id, "sw")} />
+              <div className="handle handle-se" onPointerDown={(e) => onResizePointerDown(e, note.id, "se")} />
+
+              {/* Header: semáforo -> título -> ações */}
+              <div className="folha-header dragbar" onPointerDown={(e) => onDragPointerDown(e, note.id)}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span className="dot dot-red" />
+                  <span className="dot dot-yellow" />
+                  <span className="dot dot-green" />
+                </div>
+
                 <input
-                  value={n.title}
-                  onChange={(e) => handleTitleChange(n.id, e.target.value)}
-                  placeholder="Sem Título"
-                  className={`title-input ${shakeMap[n.id] ? "shake" : ""}`}
-                  spellCheck={false}
+                  className={`title-input ${shakeIds[note.id] ? "shake" : ""}`}
+                  value={note.title}
+                  placeholder="Sem título"
+                  onChange={(e) => onTitleChange(note.id, e.target.value)}
+                  onPointerDown={(e) => {
+                    // permitir editar sem “arrastar”
+                    e.stopPropagation();
+                  }}
                 />
-              </div>
 
-              <div className="right-actions">
-                <Popover.Root>
-                  <Popover.Trigger asChild>
-                    <button className="icon-btn" aria-label="Configurações">
-                      <Settings2 size={14} strokeWidth={1.5} />
-                    </button>
-                  </Popover.Trigger>
-                  <Popover.Portal>
-                    <Popover.Content side="right" align="start" sideOffset={10} className="popover popover-horizontal">
-                      <div className="popover-row">
-                        <span className="popover-label">Fundo</span>
-                        <div className="flex items-center gap-2">
-                          {BG_COLORS.map((c) => (
-                            <button
-                              key={c.value}
-                              className={`swatch ${n.bg === c.value ? "swatch-active" : ""}`}
-                              style={{ backgroundColor: c.value }}
-                              onClick={() => updateNote(n.id, { bg: c.value, updatedAt: Date.now() })}
-                            />
-                          ))}
-                        </div>
-                      </div>
+                <div style={{ flex: 1 }} />
 
-                      <div className="popover-row">
-                        <span className="popover-label">Texto</span>
-                        <div className="flex items-center gap-2">
-                          {TEXT_COLORS.map((c) => (
-                            <button
-                              key={c.value}
-                              className={`swatch ${n.color === c.value ? "swatch-active" : ""}`}
-                              style={{ backgroundColor: c.value }}
-                              onClick={() => updateNote(n.id, { color: c.value, updatedAt: Date.now() })}
-                            />
-                          ))}
-                        </div>
-                      </div>
+                <div className="right-actions" onPointerDown={(e) => e.stopPropagation()}>
+                  {/* Settings */}
+                  <Popover.Root>
+                    <Popover.Trigger asChild>
+                      <button className="icon-btn" aria-label="Configurações">
+                        <Settings size={14} strokeWidth={1.5} />
+                      </button>
+                    </Popover.Trigger>
 
-                      <div className="popover-row">
-                        <span className="popover-label">Estilo</span>
-                        <div className="flex items-center gap-2">
-                          <button className="fmt-dot" onClick={() => applyCmd(n.id, "bold")}>
-                            <Bold size={12} strokeWidth={1.5} />
-                          </button>
-                          <button className="fmt-dot" onClick={() => applyCmd(n.id, "italic")}>
-                            <Italic size={12} strokeWidth={1.5} />
-                          </button>
-                          <button className="fmt-dot" onClick={() => applyCmd(n.id, "underline")}>
-                            <Underline size={12} strokeWidth={1.5} />
-                          </button>
-                        </div>
-                      </div>
-                    </Popover.Content>
-                  </Popover.Portal>
-                </Popover.Root>
-
-                <button className="icon-btn" onClick={newNoteCascade} aria-label="Nova nota">
-                  <Plus size={14} strokeWidth={1.5} />
-                </button>
-
-                <Popover.Root>
-                  <Popover.Trigger asChild>
-                    <button className="icon-btn" aria-label="Histórico">
-                      <Clock size={14} strokeWidth={1.5} />
-                    </button>
-                  </Popover.Trigger>
-                  <Popover.Portal>
-                    <Popover.Content side="right" align="end" sideOffset={10} className="popover popover-vertical">
-                      <div className="history-title">Histórico</div>
-                      <ScrollArea.Root className="history-scroll">
-                        <ScrollArea.Viewport className="history-viewport">
-                          <div className="history-list">
-                            {historySorted.map((h) => (
+                    <Popover.Portal>
+                      <Popover.Content
+                        side="right"
+                        align="start"
+                        sideOffset={10}
+                        collisionPadding={12}
+                        sticky="partial"
+                        className="popover popover-horizontal"
+                        style={{ zIndex: 99999 }}
+                      >
+                        {/* Fundo */}
+                        <div className="popover-row">
+                          <div className="popover-label">Fundo</div>
+                          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", width: "100%" }}>
+                            {BG_COLORS.map((c) => (
                               <button
-                                key={h.id}
-                                className="history-item"
-                                onClick={() => {
-                                  bringToFront(h.id);
-                                  window.setTimeout(() => editorRefs.current[h.id]?.focus(), 0);
-                                }}
-                              >
-                                <span className="history-item-title">{clampTitle(h.title || "Sem Título")}</span>
-                                <span className="history-item-time">{nowTimeLabel(h.updatedAt)}</span>
-                              </button>
+                                key={c.value}
+                                className={`swatch ${note.bg === c.value ? "swatch-active" : ""}`}
+                                style={{ background: c.value }}
+                                onClick={() => updateNote(note.id, { bg: c.value, updatedAt: Date.now() })}
+                                aria-label={c.name}
+                              />
                             ))}
                           </div>
-                        </ScrollArea.Viewport>
-                        <ScrollArea.Scrollbar className="history-scrollbar" orientation="vertical">
-                          <ScrollArea.Thumb className="history-thumb" />
-                        </ScrollArea.Scrollbar>
-                      </ScrollArea.Root>
-                    </Popover.Content>
-                  </Popover.Portal>
-                </Popover.Root>
+                        </div>
+
+                        {/* Texto */}
+                        <div className="popover-row">
+                          <div className="popover-label">Texto</div>
+                          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", width: "100%" }}>
+                            {FG_COLORS.map((c) => (
+                              <button
+                                key={c.value}
+                                className={`swatch ${note.fg === c.value ? "swatch-active" : ""}`}
+                                style={{ background: c.value }}
+                                onClick={() => {
+                                  // aplica na seleção se houver
+                                  bringToFront(note.id);
+                                  const el = editorRefs.current[note.id];
+                                  el?.focus();
+                                  applyForeColor(c.value);
+                                  updateNote(note.id, { fg: c.value, updatedAt: Date.now() });
+                                }}
+                                aria-label={c.name}
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Estilo */}
+                        <div className="popover-row">
+                          <div className="popover-label">Estilo</div>
+                          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", width: "100%" }}>
+                            <button
+                              className="fmt-dot"
+                              onClick={() => {
+                                bringToFront(note.id);
+                                editorRefs.current[note.id]?.focus();
+                                document.execCommand("bold");
+                                handleEditorInput(note.id);
+                              }}
+                              aria-label="Negrito"
+                            >
+                              <span style={{ fontSize: 11, fontWeight: 700 }}>B</span>
+                            </button>
+
+                            <button
+                              className="fmt-dot"
+                              onClick={() => {
+                                bringToFront(note.id);
+                                editorRefs.current[note.id]?.focus();
+                                document.execCommand("italic");
+                                handleEditorInput(note.id);
+                              }}
+                              aria-label="Itálico"
+                            >
+                              <span style={{ fontSize: 11, fontStyle: "italic" }}>I</span>
+                            </button>
+
+                            <button
+                              className="fmt-dot"
+                              onClick={() => {
+                                bringToFront(note.id);
+                                editorRefs.current[note.id]?.focus();
+                                document.execCommand("underline");
+                                handleEditorInput(note.id);
+                              }}
+                              aria-label="Sublinhado"
+                            >
+                              <span style={{ fontSize: 11, textDecoration: "underline" }}>U</span>
+                            </button>
+                          </div>
+                        </div>
+                      </Popover.Content>
+                    </Popover.Portal>
+                  </Popover.Root>
+
+                  {/* Plus */}
+                  <button
+                    className="icon-btn"
+                    aria-label="Nova nota"
+                    onClick={() => createNewNoteCascade()}
+                  >
+                    <Plus size={14} strokeWidth={1.5} />
+                  </button>
+
+                  {/* History */}
+                  <Popover.Root>
+                    <Popover.Trigger asChild>
+                      <button className="icon-btn" aria-label="Histórico">
+                        <Clock size={14} strokeWidth={1.5} />
+                      </button>
+                    </Popover.Trigger>
+
+                    <Popover.Portal>
+                      <Popover.Content
+                        side="right"
+                        align="start"
+                        sideOffset={10}
+                        collisionPadding={12}
+                        sticky="partial"
+                        className="popover popover-vertical"
+                        style={{ zIndex: 99999 }}
+                      >
+                        <div className="history-title">Histórico</div>
+
+                        <div className="history-scroll">
+                          <ScrollArea.Root style={{ width: "100%", height: 220 }}>
+                            <ScrollArea.Viewport className="history-viewport">
+                              <div className="history-list">
+                                {notes
+                                  .slice()
+                                  .sort((a, b) => b.updatedAt - a.updatedAt)
+                                  .map((n) => (
+                                    <button
+                                      key={n.id}
+                                      className="history-item"
+                                      onClick={() => {
+                                        bringToFront(n.id);
+                                        setTimeout(() => editorRefs.current[n.id]?.focus(), 0);
+                                      }}
+                                    >
+                                      <span className="history-item-title">
+                                        {(n.title || "Sem título").slice(0, 20)}
+                                      </span>
+                                      <span className="history-item-time">{nowTimeLabel(n.updatedAt)}</span>
+                                    </button>
+                                  ))}
+                              </div>
+                            </ScrollArea.Viewport>
+
+                            <ScrollArea.Scrollbar className="history-scrollbar" orientation="vertical">
+                              <ScrollArea.Thumb className="history-thumb" />
+                            </ScrollArea.Scrollbar>
+                          </ScrollArea.Root>
+                        </div>
+
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                          <button
+                            className="icon-btn"
+                            onClick={() => clearActiveNote()}
+                            title="Limpar nota atual"
+                            aria-label="Limpar"
+                          >
+                            <span style={{ fontSize: 12, fontWeight: 600 }}>×</span>
+                          </button>
+                        </div>
+                      </Popover.Content>
+                    </Popover.Portal>
+                  </Popover.Root>
+                </div>
               </div>
+
+              {/* Editor único (folha contínua) */}
+              <div
+                ref={(el) => {
+                  editorRefs.current[note.id] = el;
+                }}
+                className="editor"
+                contentEditable
+                suppressContentEditableWarning
+                data-placeholder="Escreva..."
+                style={{
+                  color: note.fg,
+                }}
+                onPointerDown={(e) => {
+                  // permitir selecionar texto sem puxar drag
+                  e.stopPropagation();
+                  bringToFront(note.id);
+                }}
+                onKeyDown={(e) => handleEditorKeyDown(e, note.id)}
+                onInput={() => handleEditorInput(note.id)}
+                dangerouslySetInnerHTML={{ __html: note.html }}
+              />
             </div>
-
-            <div
-              ref={(el) => (editorRefs.current[n.id] = el)}
-              className="editor"
-              contentEditable
-              suppressContentEditableWarning
-              onInput={() => handleEditorInput(n.id)}
-              onKeyDown={(e) => handleEditorKeyDown(n.id, e)}
-              onFocus={() => bringToFront(n.id)}
-              data-placeholder="Escreva..."
-              dangerouslySetInnerHTML={{ __html: n.html }}
-            />
-
-            <div className="handle handle-n" style={{ cursor: cursorForDir("n") }} onPointerDown={(e) => onResizePointerDown(n.id, "n", e)} />
-            <div className="handle handle-s" style={{ cursor: cursorForDir("s") }} onPointerDown={(e) => onResizePointerDown(n.id, "s", e)} />
-            <div className="handle handle-e" style={{ cursor: cursorForDir("e") }} onPointerDown={(e) => onResizePointerDown(n.id, "e", e)} />
-            <div className="handle handle-w" style={{ cursor: cursorForDir("w") }} onPointerDown={(e) => onResizePointerDown(n.id, "w", e)} />
-
-            <div className="handle handle-nw" style={{ cursor: cursorForDir("nw") }} onPointerDown={(e) => onResizePointerDown(n.id, "nw", e)} />
-            <div className="handle handle-ne" style={{ cursor: cursorForDir("ne") }} onPointerDown={(e) => onResizePointerDown(n.id, "ne", e)} />
-            <div className="handle handle-sw" style={{ cursor: cursorForDir("sw") }} onPointerDown={(e) => onResizePointerDown(n.id, "sw", e)} />
-            <div className="handle handle-se" style={{ cursor: cursorForDir("se") }} onPointerDown={(e) => onResizePointerDown(n.id, "se", e)} />
-          </div>
-        );
-      })}
+          );
+        })}
     </div>
   );
 }
