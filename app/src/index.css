@@ -2,21 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ========= Folha Única (estética Apple + sticky) ========= */
+/* ========= Folhas flutuantes (multi-notas) ========= */
 
 .folha {
-  width: min(540px, 92vw);
-  height: min(520px, 72vh);
-  min-width: 320px;
-  min-height: 320px;
-
+  position: absolute;
   border-radius: 18px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.10);
-  position: relative;
-
-  /* resizable manual */
-  resize: both;
   overflow: hidden;
+  user-select: none;
+  touch-action: none; /* importante para drag/resize no touch */
+  transition: box-shadow 140ms ease, transform 140ms ease;
+}
+
+/* foco x desfocado (profundidade) */
+.folha-focused {
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.16);
+}
+.folha-blur {
+  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.1);
 }
 
 /* header em linha única */
@@ -27,82 +29,86 @@
   padding: 14px 14px 8px 14px;
 }
 
+/* drag bar */
+.dragbar {
+  cursor: grab;
+}
+.dragbar:active {
+  cursor: grabbing;
+}
+
 /* semáforo */
 .dot {
   width: 10px;
   height: 10px;
   border-radius: 999px;
   display: inline-block;
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
-.dot-red { background: #ff5f57; }
-.dot-yellow { background: #febc2e; }
-.dot-green { background: #28c840; }
+.dot-red {
+  background: #ff5f57;
+}
+.dot-yellow {
+  background: #febc2e;
+}
+.dot-green {
+  background: #28c840;
+}
 
-/* título: contraste quase zero + placeholder só no hover */
+/* título quase invisível */
 .title-input {
   width: 100%;
   max-width: 260px;
   text-align: center;
-
   background: transparent;
   border: none;
   outline: none;
-
   font-size: 13px;
   font-weight: 500;
-
-  color: rgba(0,0,0,0.25);
+  color: rgba(0, 0, 0, 0.18);
 }
 .folha:hover .title-input {
-  color: rgba(0,0,0,0.55);
+  color: rgba(0, 0, 0, 0.55);
 }
 .title-input::placeholder {
-  color: rgba(0,0,0,0.00);
+  color: rgba(0, 0, 0, 0);
   transition: color 120ms ease;
 }
 .folha:hover .title-input::placeholder {
-  color: rgba(0,0,0,0.35);
+  color: rgba(0, 0, 0, 0.32);
 }
-
-/* shake ao exceder 20 chars */
 .shake {
   animation: shake 0.26s ease-in-out;
 }
 @keyframes shake {
-  0% { transform: translateX(0); }
-  20% { transform: translateX(-3px); }
-  40% { transform: translateX(3px); }
-  60% { transform: translateX(-2px); }
-  80% { transform: translateX(2px); }
-  100% { transform: translateX(0); }
+  0% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
 }
 
-/* botões direita: escondidos no desktop até hover */
+/* botões direita */
 .right-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* botão redondo do mesmo “peso visual” do semáforo */
-.icon-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255,255,255,0.0);
-  border: 1px solid rgba(0,0,0,0.08);
-  color: rgba(0,0,0,0.55);
-  transition: background 120ms ease, opacity 120ms ease;
-}
-.icon-btn:hover {
-  background: rgba(255,255,255,0.55);
-}
-
-/* Desktop hover behavior */
+/* oculto no desktop até hover */
 @media (hover: hover) and (pointer: fine) {
   .right-actions {
     opacity: 0;
@@ -115,56 +121,59 @@
   }
 }
 
-/* Mobile/iPad: sempre visível 50% */
+/* mobile sempre visível 50% */
 @media (hover: none), (pointer: coarse) {
   .right-actions {
     opacity: 0.5;
   }
 }
 
-/* editor: folha contínua (sem linhas, sem separação) */
+/* botão redondo mini (mesmo peso do semáforo) */
+.icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: rgba(0, 0, 0, 0.55);
+  transition: background 120ms ease;
+}
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+/* editor */
 .editor {
-  padding: 10px 16px 14px 16px;
+  user-select: text;
+  padding: 10px 16px 16px 16px;
   height: calc(100% - 54px);
   overflow: auto;
-
   outline: none;
   border: none;
   background: transparent;
-
   font-size: 15px;
   line-height: 1.6;
 }
-
-/* placeholder do contentEditable (sem “poluição”) */
 .editor:empty::before {
   content: attr(data-placeholder);
-  color: rgba(0,0,0,0.30);
+  color: rgba(0, 0, 0, 0.3);
 }
 
-/* status discreto */
-.status {
-  position: absolute;
-  bottom: 10px;
-  right: 12px;
-  font-size: 11px;
-  color: rgba(0,0,0,0.30);
-}
-
-/* Popovers (Radix) */
+/* popovers */
 .popover {
-  background: rgba(255,255,255,0.85);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(10px);
-  border: 1px solid rgba(0,0,0,0.10);
   border-radius: 14px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12);
   padding: 10px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
-
 .popover-horizontal {
   min-width: 360px;
 }
-
 .popover-vertical {
   width: 260px;
   padding: 10px;
@@ -177,49 +186,55 @@
   gap: 12px;
   padding: 6px 6px;
 }
-
 .popover-label {
   font-size: 12px;
-  color: rgba(0,0,0,0.50);
+  color: rgba(0, 0, 0, 0.5);
   width: 44px;
 }
 
-/* swatches */
+/* ====== SWATCHES (círculos puros, sem moldura) ====== */
 .swatch {
   width: 16px;
   height: 16px;
   border-radius: 999px;
-  border: 1px solid rgba(0,0,0,0.10);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.40);
-  transition: transform 100ms ease;
+  border: none;
+  outline: none;
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.08); /* “blur” orgânico */
+  transition: transform 100ms ease, box-shadow 120ms ease;
 }
-.swatch:hover { transform: scale(1.06); }
+.swatch:hover {
+  transform: scale(1.08);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+}
+/* ativo sem “contorno”: só eleva e dá mais presença */
 .swatch-active {
-  outline: 2px solid rgba(0,0,0,0.18);
-  outline-offset: 2px;
+  transform: scale(1.12);
+  box-shadow: 0 3px 16px rgba(0, 0, 0, 0.16);
 }
 
-/* format buttons */
-.fmt-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 10px;
-  border: 1px solid rgba(0,0,0,0.10);
-  background: rgba(255,255,255,0.55);
-  color: rgba(0,0,0,0.65);
+/* ====== B/I/U mini do mesmo diâmetro das bolinhas ====== */
+.fmt-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0, 0, 0, 0.06);
+  color: rgba(0, 0, 0, 0.7);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.08);
 }
-.fmt-btn:hover {
-  background: rgba(255,255,255,0.85);
+.fmt-dot:hover {
+  background: rgba(0, 0, 0, 0.09);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
 }
 
 /* history */
 .history-title {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(0,0,0,0.60);
+  color: rgba(0, 0, 0, 0.6);
   padding: 4px 6px 8px 6px;
 }
 .history-scroll {
@@ -227,7 +242,9 @@
   overflow: hidden;
   border-radius: 12px;
 }
-.history-viewport { height: 100%; }
+.history-viewport {
+  height: 100%;
+}
 .history-list {
   display: flex;
   flex-direction: column;
@@ -239,19 +256,19 @@
   text-align: left;
   border-radius: 10px;
   padding: 8px 10px;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(255,255,255,0.55);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.55);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 .history-item:hover {
-  background: rgba(255,255,255,0.85);
+  background: rgba(255, 255, 255, 0.85);
 }
 .history-item-title {
   font-size: 12px;
-  color: rgba(0,0,0,0.70);
+  color: rgba(0, 0, 0, 0.7);
   max-width: 170px;
   overflow: hidden;
   white-space: nowrap;
@@ -259,18 +276,77 @@
 }
 .history-item-time {
   font-size: 11px;
-  color: rgba(0,0,0,0.40);
+  color: rgba(0, 0, 0, 0.4);
 }
 .history-empty {
   padding: 10px;
   font-size: 12px;
-  color: rgba(0,0,0,0.45);
+  color: rgba(0, 0, 0, 0.45);
 }
 .history-scrollbar {
   width: 10px;
   padding: 2px;
 }
 .history-thumb {
-  background: rgba(0,0,0,0.18);
+  background: rgba(0, 0, 0, 0.18);
   border-radius: 999px;
+}
+
+/* ========= Resize handles (8 eixos) ========= */
+.handle {
+  position: absolute;
+  z-index: 9999;
+  background: transparent;
+}
+
+/* lados */
+.handle-n {
+  top: -6px;
+  left: 10px;
+  right: 10px;
+  height: 12px;
+}
+.handle-s {
+  bottom: -6px;
+  left: 10px;
+  right: 10px;
+  height: 12px;
+}
+.handle-e {
+  right: -6px;
+  top: 10px;
+  bottom: 10px;
+  width: 12px;
+}
+.handle-w {
+  left: -6px;
+  top: 10px;
+  bottom: 10px;
+  width: 12px;
+}
+
+/* cantos */
+.handle-nw {
+  left: -6px;
+  top: -6px;
+  width: 14px;
+  height: 14px;
+}
+.handle-ne {
+  right: -6px;
+  top: -6px;
+  width: 14px;
+  height: 14px;
+}
+.handle-sw {
+  left: -6px;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+}
+.handle-se {
+  right: -6px;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
 }
