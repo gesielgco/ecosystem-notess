@@ -2,11 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* fundo pontilhado suave */
+.app-dots {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px);
+  background-size: 18px 18px;
+  background-position: 0 0;
 }
 
-::selection {
-  background: rgba(0, 122, 255, 0.25);
+/* placeholder pro contentEditable */
+[contenteditable="true"]:empty:before {
+  content: attr(data-placeholder);
+  color: rgba(0, 0, 0, 0.45);
+}
+
+/* “shake” do título */
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+  75% { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+.shake {
+  animation: shake 0.28s ease-in-out;
 }
