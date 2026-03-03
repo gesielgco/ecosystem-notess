@@ -2,276 +2,289 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ========= Folhas flutuantes (multi-notas) ========= */
+/* =========================
+   Base / Identidade
+========================= */
 
-.folha {
-  position: absolute;
-  border-radius: 18px;
+:root {
+  --bg-app: #f2f2f2;
+  --text: #333333;
+
+  --border: rgba(0, 0, 0, 0.05);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --divider: rgba(0, 0, 0, 0.035);
+
+  --muted: rgba(51, 51, 51, 0.55);
+
+  /* sombra extremamente sutil (foco) */
+  --focus-shadow: 0 12px 28px rgba(0, 0, 0, 0.06);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.app-root {
+  min-height: 100%;
+}
+
+/* =========================
+   GRID
+========================= */
+
+.grid-screen {
+  min-height: 100vh;
+  padding: 48px 24px;
+}
+
+.grid-wrap {
+  max-width: 980px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+}
+
+.note-card {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  text-align: left;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+
+.note-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.note-card:active {
+  transform: translateY(0px);
+}
+
+.note-card-text {
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.note-card-meta {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.clamp-4 {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  user-select: none;
-  touch-action: none;
-  transition: box-shadow 140ms ease, transform 140ms ease;
 }
 
-/* foco x desfocado (profundidade) */
-.folha-focused {
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.16);
-}
-.folha-blur {
-  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.10);
+/* =========================
+   EDIT (Post-it Vertical)
+========================= */
+
+.edit-screen {
+  min-height: 100vh;
+  padding: 24px 18px 40px;
 }
 
-/* header em linha única */
-.folha-header {
+.edit-topbar {
+  max-width: 440px;
+  margin: 0 auto 10px;
+}
+
+.back-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: rgba(51, 51, 51, 0.55);
+  font-size: 14px;
+  padding: 6px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.back-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(51, 51, 51, 0.75);
+}
+
+.edit-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+/* Proporção vertical forte */
+.edit-card {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  width: 100%;
+  transition: box-shadow 180ms ease, border-color 160ms ease;
+}
+
+.edit-card--vertical {
+  max-width: 440px;
+  min-height: 400px;
+}
+
+/* Micro-interação foco */
+.edit-card.is-focused {
+  border-color: var(--border-strong);
+  box-shadow: var(--focus-shadow);
+}
+
+/* Textarea */
+.edit-textarea {
+  width: 100%;
+  min-height: 340px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.5;
+  padding: 18px 18px 10px;
+}
+
+.edit-textarea::placeholder {
+  color: rgba(51, 51, 51, 0.35);
+}
+
+/* =========================
+   Rodapé refinado (como você desenhou)
+========================= */
+
+.edit-footer {
+  display: flex;
+  align-items: center;               /* centraliza verticalmente */
+  justify-content: space-between;
+  gap: 12px;
+
+  height: 44px;                      /* barra proporcional */
+  padding: 0 16px;                   /* sem padding vertical */
+
+  border-top: 1px solid var(--divider); /* linha super sutil */
+}
+
+/* texto salvo */
+.edit-saved {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1;
+  transition: opacity 200ms ease;
+}
+
+/* leve pulso visual ao salvar */
+.saved-pulse {
+  opacity: 0.95;
+}
+
+/* lado direito */
+.edit-right {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 14px 8px 14px;
+  gap: 14px;
 }
 
-/* drag bar */
-.dragbar {
-  cursor: grab;
-}
-.dragbar:active {
-  cursor: grabbing;
-}
-
-/* semáforo */
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  display: inline-block;
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
-}
-.dot-red { background: #ff5f57; }
-.dot-yellow { background: #febc2e; }
-.dot-green { background: #28c840; }
-
-/* título quase invisível */
-.title-input {
-  width: 100%;
-  max-width: 260px;
-  text-align: center;
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(0,0,0,0.18);
-}
-.folha:hover .title-input {
-  color: rgba(0,0,0,0.55);
-}
-.title-input::placeholder {
-  color: rgba(0,0,0,0.00);
-  transition: color 120ms ease;
-}
-.folha:hover .title-input::placeholder {
-  color: rgba(0,0,0,0.32);
-}
-.shake { animation: shake 0.26s ease-in-out; }
-@keyframes shake {
-  0% { transform: translateX(0); }
-  20% { transform: translateX(-3px); }
-  40% { transform: translateX(3px); }
-  60% { transform: translateX(-2px); }
-  80% { transform: translateX(2px); }
-  100% { transform: translateX(0); }
+/* contador */
+.edit-counter {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1;
+  min-width: 64px;
+  text-align: right;
 }
 
-/* botões direita */
-.right-actions {
+/* seletor de cor */
+.color-picker {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* oculto no desktop até hover */
-@media (hover: hover) and (pointer: fine) {
-  .right-actions {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 120ms ease;
-  }
-  .folha:hover .right-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-
-/* mobile sempre visível 50% */
-@media (hover: none), (pointer: coarse) {
-  .right-actions { opacity: 0.5; }
-}
-
-/* botão redondo mini */
-.icon-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255,255,255,0.0);
-  border: 1px solid rgba(0,0,0,0.08);
-  color: rgba(0,0,0,0.55);
-  transition: background 120ms ease;
-}
-.icon-btn:hover {
-  background: rgba(255,255,255,0.55);
-}
-
-/* editor */
-.editor {
-  user-select: text;
-  padding: 10px 16px 16px 16px;
-  height: calc(100% - 54px);
-  overflow: auto;
-  outline: none;
-  border: none;
-  background: transparent;
-  font-size: 15px;
-  line-height: 1.6;
-}
-.editor:empty::before {
-  content: attr(data-placeholder);
-  color: rgba(0,0,0,0.30);
-}
-
-/* popovers */
-.popover {
-  background: rgba(255,255,255,0.85);
-  backdrop-filter: blur(10px);
-  border-radius: 14px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.12);
-  padding: 10px 10px;
-  border: 1px solid rgba(0,0,0,0.10);
-  z-index: 99999;
-}
-
-/* MESMA LARGURA (engrenagem = histórico) */
-.popover-horizontal { width: 260px; min-width: 260px; }
-.popover-vertical { width: 260px; padding: 10px; }
-
-.popover-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 6px;
-}
-.popover-label {
-  font-size: 12px;
-  color: rgba(0,0,0,0.50);
-  width: 48px;
-}
-
-/* ====== SWATCHES (círculos puros, com sombra para o cinza aparecer) ====== */
+/* bolinhas delicadas */
 .swatch {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
-  border: none;
-  outline: none;
-  box-shadow:
-    0 1px 10px rgba(0,0,0,0.10),
-    inset 0 0 0 1px rgba(0,0,0,0.06);
-  transition: transform 100ms ease, box-shadow 120ms ease;
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  padding: 0;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease;
 }
+
 .swatch:hover {
-  transform: scale(1.08);
-  box-shadow:
-    0 2px 14px rgba(0,0,0,0.14),
-    inset 0 0 0 1px rgba(0,0,0,0.06);
+  border-color: rgba(0, 0, 0, 0.18);
+  transform: scale(1.05);
 }
+
 .swatch-active {
-  transform: scale(1.12);
-  box-shadow:
-    0 3px 16px rgba(0,0,0,0.18),
-    inset 0 0 0 1px rgba(0,0,0,0.06);
+  border-color: rgba(0, 0, 0, 0.32);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
 }
 
-/* ====== B/I/U mini do mesmo diâmetro das bolinhas ====== */
-.fmt-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  border: none;
-  background: rgba(0,0,0,0.06);
-  color: rgba(0,0,0,0.70);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 1px 10px rgba(0,0,0,0.10);
-}
-.fmt-dot:hover {
-  background: rgba(0,0,0,0.09);
-  box-shadow: 0 2px 14px rgba(0,0,0,0.14);
+/* =========================
+   Responsividade ideal
+========================= */
+
+/* iPhone */
+@media (max-width: 480px) {
+  .edit-topbar {
+    max-width: 92vw;
+  }
+
+  .edit-card--vertical {
+    max-width: 92vw;
+    min-height: 380px;
+  }
+
+  .edit-textarea {
+    min-height: 300px;
+  }
 }
 
-/* history */
-.history-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(0,0,0,0.60);
-  padding: 4px 6px 8px 6px;
-}
-.history-scroll {
-  height: 220px;
-  overflow: hidden;
-  border-radius: 12px;
-}
-.history-viewport { height: 100%; }
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 4px;
-}
-.history-item {
-  width: 100%;
-  text-align: left;
-  border-radius: 10px;
-  padding: 8px 10px;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(255,255,255,0.55);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.history-item:hover { background: rgba(255,255,255,0.85); }
-.history-item-title {
-  font-size: 12px;
-  color: rgba(0,0,0,0.70);
-  max-width: 170px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.history-item-time { font-size: 11px; color: rgba(0,0,0,0.40); }
-.history-scrollbar { width: 10px; padding: 2px; }
-.history-thumb { background: rgba(0,0,0,0.18); border-radius: 999px; }
+/* iPad */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .edit-topbar {
+    max-width: 460px;
+  }
 
-/* ========= Resize handles (8 eixos) ========= */
-/* AUMENTADOS para ficar fácil pegar — inclusive ESQUERDA */
-.handle {
-  position: absolute;
-  z-index: 999999;
-  background: transparent;
-  pointer-events: auto;
+  .edit-card--vertical {
+    max-width: 460px;
+    min-height: 420px;
+  }
+
+  .edit-textarea {
+    min-height: 340px;
+  }
 }
 
-/* lados (área maior) */
-.handle-n { top: -10px; left: 10px; right: 10px; height: 20px; cursor: n-resize; }
-.handle-s { bottom: -10px; left: 10px; right: 10px; height: 20px; cursor: s-resize; }
-.handle-e { right: -10px; top: 10px; bottom: 10px; width: 20px; cursor: e-resize; }
-.handle-w { left: -10px; top: 10px; bottom: 10px; width: 20px; cursor: w-resize; }
+/* Mac grande */
+@media (min-width: 1025px) {
+  .edit-topbar {
+    max-width: 440px;
+  }
 
-/* cantos */
-.handle-nw { left: -10px; top: -10px; width: 22px; height: 22px; cursor: nw-resize; }
-.handle-ne { right: -10px; top: -10px; width: 22px; height: 22px; cursor: ne-resize; }
-.handle-sw { left: -10px; bottom: -10px; width: 22px; height: 22px; cursor: sw-resize; }
-.handle-se { right: -10px; bottom: -10px; width: 22px; height: 22px; cursor: se-resize; }
+  .edit-card--vertical {
+    max-width: 440px;
+    min-height: 420px;
+  }
+
+  .edit-textarea {
+    min-height: 360px;
+  }
+}
