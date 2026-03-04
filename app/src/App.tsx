@@ -24,11 +24,17 @@ const MIN_H = 220;
 const MAX_H = 620;
 
 // Auto-height limits (proporcional ao texto)
+// (inclui o “compacto quando vazio”)
+const AUTO_EMPTY_TEXTAREA_H = 120;
 const AUTO_MIN_TEXTAREA_H = 160;
 const AUTO_MAX_TEXTAREA_H = 360;
 
 // Footer height (CSS usa 44px)
 const FOOTER_H = 44;
+
+// Long-press (mobile)
+const LONG_PRESS_MS = 520;
+const MOVE_TOLERANCE_PX = 10;
 
 type NoteSize = {
   w?: number;
@@ -147,6 +153,10 @@ export default function App() {
     noteId: string;
   } | null>(null);
 
+  // long-press state (mobile)
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+
   const orderedNotes = useMemo(() => [...notes].sort((a, b) => b.updatedAt - a.updatedAt), [notes]);
 
   const activeNote = useMemo(() => {
@@ -236,7 +246,7 @@ export default function App() {
     setView("grid");
   }
 
-  // ✅ auto-height proporcional ao texto (se não manualH)
+  // ✅ auto-height proporcional ao texto + compacto quando vazio (se não manualH)
   function autoResizeTextarea() {
     if (!activeId) return;
     const s = sizes[activeId];
@@ -246,8 +256,14 @@ export default function App() {
     if (!el) return;
 
     el.style.height = "auto";
-    const desired = el.scrollHeight;
 
+    const text = el.value.trim();
+    if (text.length === 0) {
+      el.style.height = `${AUTO_EMPTY_TEXTAREA_H}px`;
+      return;
+    }
+
+    const desired = el.scrollHeight;
     const clampedH = clamp(desired, AUTO_MIN_TEXTAREA_H, AUTO_MAX_TEXTAREA_H);
     el.style.height = `${clampedH}px`;
   }
@@ -324,10 +340,10 @@ export default function App() {
       return nextMap;
     });
 
-    // textarea acompanha a altura manual (mantém proporção interna)
+    // textarea acompanha a altura manual
     const el = textareaRef.current;
     if (el) {
-      const inner = Math.max(AUTO_MIN_TEXTAREA_H, nextH - FOOTER_H - 20); // 20 ≈ padding
+      const inner = Math.max(AUTO_EMPTY_TEXTAREA_H, nextH - FOOTER_H - 20);
       el.style.height = `${Math.min(inner, AUTO_MAX_TEXTAREA_H)}px`;
     }
   }
@@ -337,6 +353,53 @@ export default function App() {
     if (!drag) return;
     dragRef.current = { ...drag, active: false };
     e.preventDefault();
+  }
+
+  // -----------------------------
+  // ✅ LONG PRESS (mobile) + vibração
+  // -----------------------------
+  function cancelLongPress() {
+    if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+    longPressStartRef.current = null;
+  }
+
+  function onGridPointerDown(e: React.PointerEvent) {
+    const target = e.target as HTMLElement;
+
+    // só no vazio (não em cima de um card)
+    if (target.closest(".note-card")) return;
+
+    const isCoarse =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(pointer:coarse)").matches;
+
+    // só para mobile/tablet
+    if (!isCoarse) return;
+
+    longPressStartRef.current = { x: e.clientX, y: e.clientY };
+
+    cancelLongPress();
+    longPressTimerRef.current = window.setTimeout(() => {
+      // vibração sutil (se suportar)
+      if (navigator.vibrate) navigator.vibrate(12);
+
+      createNoteAndOpen();
+      cancelLongPress();
+    }, LONG_PRESS_MS);
+  }
+
+  function onGridPointerMove(e: React.PointerEvent) {
+    if (!longPressStartRef.current) return;
+
+    const dx = Math.abs(e.clientX - longPressStartRef.current.x);
+    const dy = Math.abs(e.clientY - longPressStartRef.current.y);
+
+    // se o usuário estiver rolando/arrastando, cancela
+    if (dx > MOVE_TOLERANCE_PX || dy > MOVE_TOLERANCE_PX) {
+      cancelLongPress();
+    }
   }
 
   // ✅ BOOT: sempre edit (última válida; senão cria; senão mais recente)
@@ -415,7 +478,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, view]);
 
-  function onGridClick() {
+  // Desktop: duplo clique no vazio cria (mobile: long press)
+  function onGridDoubleClick() {
     createNoteAndOpen();
   }
 
@@ -433,7 +497,16 @@ export default function App() {
   return (
     <div className="app-root">
       {view === "grid" && (
-        <div className="grid-screen" onClick={onGridClick} role="button" tabIndex={0}>
+        <div
+          className="grid-screen"
+          onDoubleClick={onGridDoubleClick}
+          onPointerDown={onGridPointerDown}
+          onPointerMove={onGridPointerMove}
+          onPointerUp={cancelLongPress}
+          onPointerCancel={cancelLongPress}
+          role="button"
+          tabIndex={0}
+        >
           <div className="grid-wrap">
             {orderedNotes.map((n) => (
               <button
@@ -457,12 +530,12 @@ export default function App() {
       {view === "edit" && activeNote && (
         <div className="edit-screen">
           <div className="edit-topbar">
-            <button className="back-btn" type="button" onClick={exitToGrid}>
-              Voltar
+            <button className="back-btn" type="button" onClick={exitToGrid} aria-label="Voltar">
+  <span className="back-icon">←</span>
             </button>
           </div>
 
-          {/* ✅ Auto-centralizar verticalmente: wrapper faz center */}
+          {/* Centralização vertical é feita no CSS (.edit-outer) */}
           <div className="edit-outer">
             <div className="edit-wrap">
               <div
@@ -520,6 +593,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
               <div style={{ height: 10 }} />
             </div>
           </div>
