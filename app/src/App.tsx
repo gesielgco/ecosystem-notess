@@ -17,16 +17,22 @@ const STORAGE_SIZES = "ecosystem_notes_v1_sizes";
 const BG_PALETTE = ["#F7F7F7", "#F7E7CD", "#F5E6EA", "#D4EFDF", "#D6EAF8"] as const;
 const MAX_CHARS = 400;
 
-/** Tamanho mínimo/máximo (padrão). O CSS também reforça responsivo. */
+// Hard limits (manual resize)
 const MIN_W = 300;
-const MAX_W = 440;
+const MAX_W = 520;
+const MIN_H = 220;
+const MAX_H = 620;
 
-const MIN_H = 260;
-const MAX_H = 520;
+// Auto-height limits (proporcional ao texto)
+const AUTO_MIN_TEXTAREA_H = 160;
+const AUTO_MAX_TEXTAREA_H = 360;
+
+// Footer height (CSS usa 44px)
+const FOOTER_H = 44;
 
 type NoteSize = {
-  w?: number; // largura manual
-  h?: number; // altura manual
+  w?: number;
+  h?: number;
   manualW?: boolean;
   manualH?: boolean;
 };
@@ -113,7 +119,7 @@ function clamp(n: number, min: number, max: number) {
 
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
-  const [view, setView] = useState<View>("edit"); // ✅ sempre começa em edit
+  const [view, setView] = useState<View>("edit"); // ✅ sempre abre no modo edição
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // micro-interações
@@ -182,7 +188,7 @@ export default function App() {
     saveLastEdited(newNote.id);
     setView("edit");
 
-    // reset size (defaults)
+    // reset size for this note
     setSizes((prev) => {
       const nextMap = { ...prev };
       delete nextMap[newNote.id];
@@ -230,6 +236,22 @@ export default function App() {
     setView("grid");
   }
 
+  // ✅ auto-height proporcional ao texto (se não manualH)
+  function autoResizeTextarea() {
+    if (!activeId) return;
+    const s = sizes[activeId];
+    if (s?.manualH) return;
+
+    const el = textareaRef.current;
+    if (!el) return;
+
+    el.style.height = "auto";
+    const desired = el.scrollHeight;
+
+    const clampedH = clamp(desired, AUTO_MIN_TEXTAREA_H, AUTO_MAX_TEXTAREA_H);
+    el.style.height = `${clampedH}px`;
+  }
+
   function updateActiveText(nextTextRaw: string) {
     if (!activeId) return;
     const nextText = clampText(nextTextRaw);
@@ -242,8 +264,6 @@ export default function App() {
     });
 
     pulseSaved();
-
-    // auto height proporcional ao texto, se o usuário não travou manualH
     queueMicrotask(() => autoResizeTextarea());
   }
 
@@ -261,27 +281,7 @@ export default function App() {
     pulseSaved();
   }
 
-  // ✅ Auto-resize de altura: proporcional ao texto (sem ocupar tela inteira)
-  function autoResizeTextarea() {
-    if (!activeId) return;
-    const s = sizes[activeId];
-    if (s?.manualH) return; // usuário travou altura manualmente
-
-    const el = textareaRef.current;
-    const card = cardRef.current;
-    if (!el || !card) return;
-
-    // reseta pra medir scrollHeight corretamente
-    el.style.height = "auto";
-
-    const desired = el.scrollHeight; // altura do conteúdo
-    // limitamos dentro de uma janela confortável (MIN_H..MAX_H)
-    const clamped = clamp(desired, MIN_H, MAX_H);
-
-    el.style.height = `${clamped}px`;
-  }
-
-  // ✅ Redimensionamento manual pelo canto inferior direito (discreto)
+  // ✅ Resize manual (canto inferior direito)
   function onResizeHandlePointerDown(e: React.PointerEvent) {
     if (!activeId) return;
     const card = cardRef.current;
@@ -291,15 +291,12 @@ export default function App() {
     e.stopPropagation();
 
     const rect = card.getBoundingClientRect();
-    const startW = rect.width;
-    const startH = rect.height;
-
     dragRef.current = {
       active: true,
       startX: e.clientX,
       startY: e.clientY,
-      startW,
-      startH,
+      startW: rect.width,
+      startH: rect.height,
       noteId: activeId,
     };
 
@@ -327,10 +324,11 @@ export default function App() {
       return nextMap;
     });
 
-    // textarea acompanha quando altura manual muda: ocupa o espaço sem "pular"
+    // textarea acompanha a altura manual (mantém proporção interna)
     const el = textareaRef.current;
     if (el) {
-      el.style.height = `${Math.max(160, nextH - 44)}px`; // 44 ≈ footer
+      const inner = Math.max(AUTO_MIN_TEXTAREA_H, nextH - FOOTER_H - 20); // 20 ≈ padding
+      el.style.height = `${Math.min(inner, AUTO_MAX_TEXTAREA_H)}px`;
     }
   }
 
@@ -341,7 +339,7 @@ export default function App() {
     e.preventDefault();
   }
 
-  // ✅ BOOT: sempre abre em edit (última válida, senão cria, senão abre mais recente)
+  // ✅ BOOT: sempre edit (última válida; senão cria; senão mais recente)
   useEffect(() => {
     const loaded = loadNotes();
     const last = loadLastEdited();
@@ -410,7 +408,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [view, notes, activeId]);
 
-  // quando muda nota ativa, aplica auto altura proporcional (se não manual)
+  // ao trocar nota ativa: aplica auto-height proporcional
   useEffect(() => {
     if (view !== "edit") return;
     setTimeout(() => autoResizeTextarea(), 0);
@@ -422,6 +420,7 @@ export default function App() {
   }
 
   const activeSize = activeId ? sizes[activeId] : undefined;
+
   const cardStyle: React.CSSProperties | undefined =
     view === "edit" && activeId
       ? {
@@ -463,65 +462,66 @@ export default function App() {
             </button>
           </div>
 
-          <div className="edit-wrap">
-            <div
-              ref={cardRef}
-              className={`edit-card edit-card--postit ${isFocused ? "is-focused" : ""}`}
-              style={cardStyle}
-            >
-              <textarea
-                ref={textareaRef}
-                className="edit-textarea"
-                placeholder="Escreva..."
-                value={activeNote.text}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v.length > MAX_CHARS) updateActiveText(v.slice(0, MAX_CHARS));
-                  else updateActiveText(v);
-                }}
-                spellCheck
-              />
-
-              {/* handle de resize (canto inferior direito) */}
+          {/* ✅ Auto-centralizar verticalmente: wrapper faz center */}
+          <div className="edit-outer">
+            <div className="edit-wrap">
               <div
-                className="resize-handle"
-                onPointerDown={onResizeHandlePointerDown}
-                onPointerMove={onResizeHandlePointerMove}
-                onPointerUp={onResizeHandlePointerUp}
-                role="presentation"
-                title="Ajustar tamanho"
-              />
+                ref={cardRef}
+                className={`edit-card edit-card--postit ${isFocused ? "is-focused" : ""}`}
+                style={cardStyle}
+              >
+                <textarea
+                  ref={textareaRef}
+                  className="edit-textarea"
+                  placeholder="Escreva..."
+                  value={activeNote.text}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v.length > MAX_CHARS) updateActiveText(v.slice(0, MAX_CHARS));
+                    else updateActiveText(v);
+                  }}
+                  spellCheck
+                />
 
-              <div className="edit-footer">
-                <div className={`edit-saved ${savedPulse ? "saved-pulse" : ""}`}>
-                  Salvo às {formatTime(activeNote.updatedAt)}
-                </div>
+                <div
+                  className="resize-handle"
+                  onPointerDown={onResizeHandlePointerDown}
+                  onPointerMove={onResizeHandlePointerMove}
+                  onPointerUp={onResizeHandlePointerUp}
+                  role="presentation"
+                  title="Ajustar tamanho"
+                />
 
-                <div className="edit-right">
-                  <div className="color-picker" aria-label="Selecionar cor do fundo">
-                    {BG_PALETTE.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        className={`swatch ${activeNote.bg === c ? "swatch-active" : ""}`}
-                        style={{ background: c }}
-                        onClick={() => updateActiveBg(c)}
-                        aria-label={`Cor ${c}`}
-                        title="Alterar cor"
-                      />
-                    ))}
+                <div className="edit-footer">
+                  <div className={`edit-saved ${savedPulse ? "saved-pulse" : ""}`}>
+                    Salvo às {formatTime(activeNote.updatedAt)}
                   </div>
 
-                  <div className="edit-counter">
-                    {activeNote.text.length} / {MAX_CHARS}
+                  <div className="edit-right">
+                    <div className="color-picker" aria-label="Selecionar cor do fundo">
+                      {BG_PALETTE.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          className={`swatch ${activeNote.bg === c ? "swatch-active" : ""}`}
+                          style={{ background: c }}
+                          onClick={() => updateActiveBg(c)}
+                          aria-label={`Cor ${c}`}
+                          title="Alterar cor"
+                        />
+                      ))}
+                    </div>
+
+                    <div className="edit-counter">
+                      {activeNote.text.length} / {MAX_CHARS}
+                    </div>
                   </div>
                 </div>
               </div>
+              <div style={{ height: 10 }} />
             </div>
-
-            <div style={{ height: 10 }} />
           </div>
         </div>
       )}
