@@ -14,7 +14,7 @@ const STORAGE_NOTES = "ecosystem_notes_v1_notes";
 const STORAGE_LAST = "ecosystem_notes_v1_lastEditedNoteId";
 const STORAGE_SIZES = "ecosystem_notes_v1_sizes";
 
-const BG_PALETTE = ["#F7F7F7", "#F7E7CD", "#F5E6EA", "#D4EFDF", "#D6EAF8"] as const;
+const BG_PALETTE = ["#FCFCFC", "#F7E7CD", "#F5E6EA", "#D4EFDF", "#D6EAF8"] as const;
 const MAX_CHARS = 400;
 
 // Hard limits (manual resize)
@@ -63,7 +63,7 @@ function formatTime(ts: number) {
 }
 
 function safeBg(bg: string) {
-  return (BG_PALETTE as readonly string[]).includes(bg) ? bg : "#F7F7F7";
+  return (BG_PALETTE as readonly string[]).includes(bg) ? bg : "#FCFCFC";
 }
 
 function loadNotes(): Note[] {
@@ -419,7 +419,7 @@ export default function App() {
 
     if (loaded.length === 0) {
       const t = now();
-      const newNote: Note = { id: genId(), text: "", bg: "#F7F7F7", createdAt: t, updatedAt: t };
+      const newNote: Note = { id: genId(), text: "", bg: "#FCFCFC", createdAt: t, updatedAt: t };
       const next = [newNote];
       setNotes(next);
       saveNotes(next);

@@ -27,6 +27,7 @@ body,
 
 .grid-screen{
   padding:32px;
+  min-height:100dvh;   /* ← adiciona isso */
 }
 
 .grid-wrap{
@@ -42,7 +43,10 @@ body,
   text-align:left;
   cursor:pointer;
   background:#fff;
-  transition:transform .08s ease,box-shadow .08s ease;
+
+  color:#2b2b2b;   /* ← cor chumbo igual editor */
+
+  transition:transform .08s ease, box-shadow .08s ease;
 }
 
 .note-card:hover{
@@ -238,8 +242,9 @@ body,
 /* SALVO */
 
 .edit-saved{
-  opacity:.8;
-  transition:opacity .2s ease;
+  opacity: .55;
+  font-weight: 400;
+  transition: opacity .2s ease;
 }
 
 .saved-pulse{
