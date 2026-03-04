@@ -12,9 +12,24 @@ type View = "grid" | "edit";
 
 const STORAGE_NOTES = "ecosystem_notes_v1_notes";
 const STORAGE_LAST = "ecosystem_notes_v1_lastEditedNoteId";
+const STORAGE_SIZES = "ecosystem_notes_v1_sizes";
 
 const BG_PALETTE = ["#F7F7F7", "#F7E7CD", "#F5E6EA", "#D4EFDF", "#D6EAF8"] as const;
 const MAX_CHARS = 400;
+
+/** Tamanho mínimo/máximo (padrão). O CSS também reforça responsivo. */
+const MIN_W = 300;
+const MAX_W = 440;
+
+const MIN_H = 260;
+const MAX_H = 520;
+
+type NoteSize = {
+  w?: number; // largura manual
+  h?: number; // altura manual
+  manualW?: boolean;
+  manualH?: boolean;
+};
 
 function now() {
   return Date.now();
@@ -45,7 +60,6 @@ function loadNotes(): Note[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-
     return parsed
       .map((n: any) => ({
         id: String(n?.id ?? ""),
@@ -77,9 +91,29 @@ function saveLastEdited(id: string | null) {
   else localStorage.setItem(STORAGE_LAST, id);
 }
 
+function loadSizes(): Record<string, NoteSize> {
+  try {
+    const raw = localStorage.getItem(STORAGE_SIZES);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function saveSizes(map: Record<string, NoteSize>) {
+  localStorage.setItem(STORAGE_SIZES, JSON.stringify(map));
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
-  const [view, setView] = useState<View>("edit"); // ✅ abre sempre no modo edição
+  const [view, setView] = useState<View>("edit"); // ✅ sempre começa em edit
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // micro-interações
@@ -87,14 +121,27 @@ export default function App() {
   const [savedPulse, setSavedPulse] = useState(false);
   const savedPulseTimer = useRef<number | null>(null);
 
-  // persist debounce (leve)
+  // persist debounce
   const saveTimerRef = useRef<number | null>(null);
 
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // sizes per note
+  const [sizes, setSizes] = useState<Record<string, NoteSize>>({});
 
-  const orderedNotes = useMemo(() => {
-    return [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [notes]);
+  // refs
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
+
+  // resize drag state
+  const dragRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+    noteId: string;
+  } | null>(null);
+
+  const orderedNotes = useMemo(() => [...notes].sort((a, b) => b.updatedAt - a.updatedAt), [notes]);
 
   const activeNote = useMemo(() => {
     if (!activeId) return null;
@@ -103,9 +150,7 @@ export default function App() {
 
   function scheduleSave(nextNotes: Note[]) {
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => {
-      saveNotes(nextNotes);
-    }, 220);
+    saveTimerRef.current = window.setTimeout(() => saveNotes(nextNotes), 220);
   }
 
   function pulseSaved() {
@@ -136,6 +181,14 @@ export default function App() {
     setActiveId(newNote.id);
     saveLastEdited(newNote.id);
     setView("edit");
+
+    // reset size (defaults)
+    setSizes((prev) => {
+      const nextMap = { ...prev };
+      delete nextMap[newNote.id];
+      saveSizes(nextMap);
+      return nextMap;
+    });
   }
 
   function deleteNoteSilently(noteId: string) {
@@ -144,6 +197,13 @@ export default function App() {
     scheduleSave(next);
 
     if (loadLastEdited() === noteId) saveLastEdited(null);
+
+    setSizes((prev) => {
+      const nextMap = { ...prev };
+      delete nextMap[noteId];
+      saveSizes(nextMap);
+      return nextMap;
+    });
   }
 
   function maybeDeleteActiveIfEmpty() {
@@ -175,13 +235,16 @@ export default function App() {
     const nextText = clampText(nextTextRaw);
     const t = now();
 
-    const next = notes.map((n) =>
-      n.id === activeId ? { ...n, text: nextText, updatedAt: t } : n
-    );
+    setNotes((prev) => {
+      const next = prev.map((n) => (n.id === activeId ? { ...n, text: nextText, updatedAt: t } : n));
+      scheduleSave(next);
+      return next;
+    });
 
-    setNotes(next);
-    scheduleSave(next);
     pulseSaved();
+
+    // auto height proporcional ao texto, se o usuário não travou manualH
+    queueMicrotask(() => autoResizeTextarea());
   }
 
   function updateActiveBg(bg: string) {
@@ -189,63 +252,131 @@ export default function App() {
     const safe = safeBg(bg);
     const t = now();
 
-    const next = notes.map((n) =>
-      n.id === activeId ? { ...n, bg: safe, updatedAt: t } : n
-    );
+    setNotes((prev) => {
+      const next = prev.map((n) => (n.id === activeId ? { ...n, bg: safe, updatedAt: t } : n));
+      scheduleSave(next);
+      return next;
+    });
 
-    setNotes(next);
-    scheduleSave(next);
     pulseSaved();
   }
 
-  // ✅ BOOT: abre sempre no edit (última nota; se vazio cria)
+  // ✅ Auto-resize de altura: proporcional ao texto (sem ocupar tela inteira)
+  function autoResizeTextarea() {
+    if (!activeId) return;
+    const s = sizes[activeId];
+    if (s?.manualH) return; // usuário travou altura manualmente
+
+    const el = textareaRef.current;
+    const card = cardRef.current;
+    if (!el || !card) return;
+
+    // reseta pra medir scrollHeight corretamente
+    el.style.height = "auto";
+
+    const desired = el.scrollHeight; // altura do conteúdo
+    // limitamos dentro de uma janela confortável (MIN_H..MAX_H)
+    const clamped = clamp(desired, MIN_H, MAX_H);
+
+    el.style.height = `${clamped}px`;
+  }
+
+  // ✅ Redimensionamento manual pelo canto inferior direito (discreto)
+  function onResizeHandlePointerDown(e: React.PointerEvent) {
+    if (!activeId) return;
+    const card = cardRef.current;
+    if (!card) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = card.getBoundingClientRect();
+    const startW = rect.width;
+    const startH = rect.height;
+
+    dragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      startW,
+      startH,
+      noteId: activeId,
+    };
+
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function onResizeHandlePointerMove(e: React.PointerEvent) {
+    const drag = dragRef.current;
+    if (!drag?.active) return;
+
+    e.preventDefault();
+
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+
+    const nextW = clamp(drag.startW + dx, MIN_W, MAX_W);
+    const nextH = clamp(drag.startH + dy, MIN_H, MAX_H);
+
+    setSizes((prev) => {
+      const nextMap = {
+        ...prev,
+        [drag.noteId]: { ...(prev[drag.noteId] ?? {}), w: nextW, h: nextH, manualW: true, manualH: true },
+      };
+      saveSizes(nextMap);
+      return nextMap;
+    });
+
+    // textarea acompanha quando altura manual muda: ocupa o espaço sem "pular"
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = `${Math.max(160, nextH - 44)}px`; // 44 ≈ footer
+    }
+  }
+
+  function onResizeHandlePointerUp(e: React.PointerEvent) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    dragRef.current = { ...drag, active: false };
+    e.preventDefault();
+  }
+
+  // ✅ BOOT: sempre abre em edit (última válida, senão cria, senão abre mais recente)
   useEffect(() => {
     const loaded = loadNotes();
     const last = loadLastEdited();
+    const loadedSizes = loadSizes();
 
     setNotes(loaded);
+    setSizes(loadedSizes);
 
-    // 1) última nota válida
     if (last && loaded.some((n) => n.id === last)) {
       setActiveId(last);
       setView("edit");
       return;
     }
 
-    // 2) sem notas: cria e abre
     if (loaded.length === 0) {
       const t = now();
-      const newNote: Note = {
-        id: genId(),
-        text: "",
-        bg: "#F7F7F7",
-        createdAt: t,
-        updatedAt: t,
-      };
-
+      const newNote: Note = { id: genId(), text: "", bg: "#F7F7F7", createdAt: t, updatedAt: t };
       const next = [newNote];
       setNotes(next);
       saveNotes(next);
       saveLastEdited(newNote.id);
-
       setActiveId(newNote.id);
       setView("edit");
       return;
     }
 
-    // 3) tem notas, mas não tem last válido → abre a mais recente
     const mostRecent = [...loaded].sort((a, b) => b.updatedAt - a.updatedAt)[0];
     if (mostRecent) {
       setActiveId(mostRecent.id);
       saveLastEdited(mostRecent.id);
       setView("edit");
-      return;
     }
-
-    setView("edit");
   }, []);
 
-  // foco apenas desktop (não estoura teclado no mobile)
+  // foco apenas desktop (não abre teclado no mobile)
   useEffect(() => {
     if (view !== "edit") return;
 
@@ -279,10 +410,26 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [view, notes, activeId]);
 
+  // quando muda nota ativa, aplica auto altura proporcional (se não manual)
+  useEffect(() => {
+    if (view !== "edit") return;
+    setTimeout(() => autoResizeTextarea(), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, view]);
+
   function onGridClick() {
-    // clique no vazio do grid cria nota (quando estiver no grid)
     createNoteAndOpen();
   }
+
+  const activeSize = activeId ? sizes[activeId] : undefined;
+  const cardStyle: React.CSSProperties | undefined =
+    view === "edit" && activeId
+      ? {
+          background: activeNote?.bg,
+          width: activeSize?.manualW && activeSize?.w ? `${activeSize.w}px` : undefined,
+          height: activeSize?.manualH && activeSize?.h ? `${activeSize.h}px` : undefined,
+        }
+      : undefined;
 
   return (
     <div className="app-root">
@@ -318,8 +465,9 @@ export default function App() {
 
           <div className="edit-wrap">
             <div
-              className={`edit-card edit-card--vertical ${isFocused ? "is-focused" : ""}`}
-              style={{ background: activeNote.bg }}
+              ref={cardRef}
+              className={`edit-card edit-card--postit ${isFocused ? "is-focused" : ""}`}
+              style={cardStyle}
             >
               <textarea
                 ref={textareaRef}
@@ -334,6 +482,16 @@ export default function App() {
                   else updateActiveText(v);
                 }}
                 spellCheck
+              />
+
+              {/* handle de resize (canto inferior direito) */}
+              <div
+                className="resize-handle"
+                onPointerDown={onResizeHandlePointerDown}
+                onPointerMove={onResizeHandlePointerMove}
+                onPointerUp={onResizeHandlePointerUp}
+                role="presentation"
+                title="Ajustar tamanho"
               />
 
               <div className="edit-footer">

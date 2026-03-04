@@ -2,21 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
-/* =========================
-   Base / Identidade
-========================= */
-
 :root {
   --bg-app: #f2f2f2;
   --text: #333333;
 
   --border: rgba(0, 0, 0, 0.05);
   --border-strong: rgba(0, 0, 0, 0.12);
-  --divider: rgba(0, 0, 0, 0.035);
+  --divider: rgba(0, 0, 0, 0.028);
 
   --muted: rgba(51, 51, 51, 0.55);
 
-  /* sombra extremamente sutil (foco) */
   --focus-shadow: 0 12px 28px rgba(0, 0, 0, 0.06);
 }
 
@@ -68,14 +63,9 @@ body {
   transform: translateY(-1px);
 }
 
-.note-card:active {
-  transform: translateY(0px);
-}
-
 .note-card-text {
   font-size: 15px;
   line-height: 1.35;
-  color: var(--text);
   white-space: pre-wrap;
 }
 
@@ -93,7 +83,7 @@ body {
 }
 
 /* =========================
-   EDIT (Post-it Vertical)
+   EDIT
 ========================= */
 
 .edit-screen {
@@ -127,29 +117,31 @@ body {
   justify-content: center;
 }
 
-/* Proporção vertical forte */
+/* Post-it: tamanho mínimo + max definido; nunca ocupa a tela no iPhone */
 .edit-card {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 18px;
   width: 100%;
+  max-width: 440px; /* desktop */
+  min-width: 300px;
+  min-height: 260px;
+  max-height: 520px;
   transition: box-shadow 180ms ease, border-color 160ms ease;
 }
 
-.edit-card--vertical {
-  max-width: 440px;
-  min-height: 400px;
+.edit-card--postit {
+  /* garante que ele não vire “full width” */
+  width: auto;
 }
 
-/* Micro-interação foco */
 .edit-card.is-focused {
   border-color: var(--border-strong);
   box-shadow: var(--focus-shadow);
 }
 
-/* Textarea */
 .edit-textarea {
   width: 100%;
-  min-height: 340px;
   border: 0;
   outline: none;
   resize: none;
@@ -157,30 +149,27 @@ body {
   color: var(--text);
   font-size: 16px;
   line-height: 1.5;
+
   padding: 18px 18px 10px;
+  /* altura controlada pelo JS (autoHeight proporcional) */
 }
 
 .edit-textarea::placeholder {
   color: rgba(51, 51, 51, 0.35);
 }
 
-/* =========================
-   Rodapé refinado (como você desenhou)
-========================= */
-
+/* Rodapé: compacto e centralizado */
 .edit-footer {
   display: flex;
-  align-items: center;               /* centraliza verticalmente */
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 
-  height: 44px;                      /* barra proporcional */
-  padding: 0 16px;                   /* sem padding vertical */
-
-  border-top: 1px solid var(--divider); /* linha super sutil */
+  height: 44px;
+  padding: 0 16px;
+  border-top: 1px solid var(--divider);
 }
 
-/* texto salvo */
 .edit-saved {
   font-size: 11px;
   color: var(--muted);
@@ -188,19 +177,16 @@ body {
   transition: opacity 200ms ease;
 }
 
-/* leve pulso visual ao salvar */
 .saved-pulse {
   opacity: 0.95;
 }
 
-/* lado direito */
 .edit-right {
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
-/* contador */
 .edit-counter {
   font-size: 11px;
   color: var(--muted);
@@ -209,14 +195,12 @@ body {
   text-align: right;
 }
 
-/* seletor de cor */
 .color-picker {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* bolinhas delicadas */
 .swatch {
   width: 12px;
   height: 12px;
@@ -237,54 +221,58 @@ body {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
 }
 
+/* Handle discreto de resize no canto inferior direito */
+.resize-handle {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  border-radius: 6px;
+
+  /* visual quase invisível */
+  background: rgba(0, 0, 0, 0.04);
+  opacity: 0.0;
+  transition: opacity 140ms ease, background 140ms ease;
+}
+
+/* aparece só em hover/foco (silencioso) */
+.edit-card:hover .resize-handle,
+.edit-card.is-focused .resize-handle {
+  opacity: 0.55;
+}
+
+.resize-handle:hover {
+  background: rgba(0, 0, 0, 0.06);
+  opacity: 0.7;
+}
+
 /* =========================
-   Responsividade ideal
+   Responsividade: iPhone / iPad
+   (post-it central, sem ocupar a tela)
 ========================= */
 
-/* iPhone */
 @media (max-width: 480px) {
   .edit-topbar {
-    max-width: 92vw;
+    max-width: 360px;
   }
 
-  .edit-card--vertical {
-    max-width: 92vw;
-    min-height: 380px;
-  }
-
-  .edit-textarea {
-    min-height: 300px;
+  .edit-card {
+    max-width: 360px;   /* ✅ não ocupa a tela */
+    min-width: 280px;
+    max-height: 520px;
   }
 }
 
-/* iPad */
 @media (min-width: 768px) and (max-width: 1024px) {
   .edit-topbar {
-    max-width: 460px;
+    max-width: 420px;
   }
 
-  .edit-card--vertical {
-    max-width: 460px;
-    min-height: 420px;
-  }
-
-  .edit-textarea {
-    min-height: 340px;
-  }
-}
-
-/* Mac grande */
-@media (min-width: 1025px) {
-  .edit-topbar {
-    max-width: 440px;
-  }
-
-  .edit-card--vertical {
-    max-width: 440px;
-    min-height: 420px;
-  }
-
-  .edit-textarea {
-    min-height: 360px;
+  .edit-card {
+    max-width: 420px;
+    min-width: 320px;
+    max-height: 520px;
   }
 }
