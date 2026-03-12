@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Home, CheckSquare, X, Trash2 } from "lucide-react";
 
 type Note = {
   id: string;
@@ -17,22 +18,21 @@ const STORAGE_SIZES = "ecosystem_notes_v1_sizes";
 const BG_PALETTE = ["#FCFCFC", "#F7E7CD", "#F5E6EA", "#D4EFDF", "#D6EAF8"] as const;
 const MAX_CHARS = 400;
 
-// Hard limits (manual resize)
+// resize manual
 const MIN_W = 300;
 const MAX_W = 520;
 const MIN_H = 220;
 const MAX_H = 620;
 
-// Auto-height limits (proporcional ao texto)
-// (inclui o “compacto quando vazio”)
+// auto-height do editor
 const AUTO_EMPTY_TEXTAREA_H = 120;
 const AUTO_MIN_TEXTAREA_H = 160;
 const AUTO_MAX_TEXTAREA_H = 360;
 
-// Footer height (CSS usa 44px)
+// footer edit
 const FOOTER_H = 44;
 
-// Long-press (mobile)
+// mobile long press
 const LONG_PRESS_MS = 520;
 const MOVE_TOLERANCE_PX = 10;
 
@@ -72,11 +72,12 @@ function loadNotes(): Note[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
+
     return parsed
       .map((n: any) => ({
         id: String(n?.id ?? ""),
         text: typeof n?.text === "string" ? clampText(n.text) : "",
-        bg: safeBg(String(n?.bg ?? "#F7F7F7")),
+        bg: safeBg(String(n?.bg ?? "#FCFCFC")),
         createdAt: typeof n?.createdAt === "number" ? n.createdAt : now(),
         updatedAt: typeof n?.updatedAt === "number" ? n.updatedAt : now(),
       }))
@@ -123,27 +124,32 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function isCoarsePointer() {
+  return (
+    typeof window !== "undefined" &&
+    !!window.matchMedia &&
+    window.matchMedia("(pointer:coarse)").matches
+  );
+}
+
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
-  const [view, setView] = useState<View>("edit"); // ✅ sempre abre no modo edição
+  const [view, setView] = useState<View>("edit");
   const [activeId, setActiveId] = useState<string | null>(null);
-
-  // micro-interações
-  const [isFocused, setIsFocused] = useState(false);
-  const [savedPulse, setSavedPulse] = useState(false);
-  const savedPulseTimer = useRef<number | null>(null);
-
-  // persist debounce
-  const saveTimerRef = useRef<number | null>(null);
-
-  // sizes per note
   const [sizes, setSizes] = useState<Record<string, NoteSize>>({});
 
-  // refs
+  const [isFocused, setIsFocused] = useState(false);
+  const [savedPulse, setSavedPulse] = useState(false);
+
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const savedPulseTimer = useRef<number | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
-  // resize drag state
   const dragRef = useRef<{
     active: boolean;
     startX: number;
@@ -153,20 +159,26 @@ export default function App() {
     noteId: string;
   } | null>(null);
 
-  // long-press state (mobile)
   const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressNextCardClickRef = useRef(false);
 
-  const orderedNotes = useMemo(() => [...notes].sort((a, b) => b.updatedAt - a.updatedAt), [notes]);
+  const orderedNotes = useMemo(() => {
+    return [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [notes]);
 
   const activeNote = useMemo(() => {
     if (!activeId) return null;
     return notes.find((n) => n.id === activeId) ?? null;
   }, [notes, activeId]);
 
+  const activeSize = activeId ? sizes[activeId] : undefined;
+
   function scheduleSave(nextNotes: Note[]) {
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => saveNotes(nextNotes), 220);
+    saveTimerRef.current = window.setTimeout(() => {
+      saveNotes(nextNotes);
+    }, 220);
   }
 
   function pulseSaved() {
@@ -176,8 +188,25 @@ export default function App() {
   }
 
   function pickBgForNew(count: number) {
-    const idx = count % BG_PALETTE.length;
-    return BG_PALETTE[idx];
+    return BG_PALETTE[count % BG_PALETTE.length];
+  }
+
+  function clearSelectionMode() {
+    setIsSelectionMode(false);
+    setSelectedIds([]);
+  }
+
+  function toggleSelected(noteId: string) {
+    setSelectedIds((prev) =>
+      prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId]
+    );
+  }
+
+  function enterSelectionMode(initialId?: string) {
+    setIsSelectionMode(true);
+    if (initialId) {
+      setSelectedIds((prev) => (prev.includes(initialId) ? prev : [...prev, initialId]));
+    }
   }
 
   function createNoteAndOpen(prefBg?: string) {
@@ -197,8 +226,8 @@ export default function App() {
     setActiveId(newNote.id);
     saveLastEdited(newNote.id);
     setView("edit");
+    clearSelectionMode();
 
-    // reset size for this note
     setSizes((prev) => {
       const nextMap = { ...prev };
       delete nextMap[newNote.id];
@@ -222,6 +251,29 @@ export default function App() {
     });
   }
 
+  function deleteSelectedNotes() {
+    if (selectedIds.length === 0) return;
+
+    const selectedSet = new Set(selectedIds);
+    const next = notes.filter((n) => !selectedSet.has(n.id));
+    setNotes(next);
+    scheduleSave(next);
+
+    setSizes((prev) => {
+      const nextMap = { ...prev };
+      for (const id of selectedIds) delete nextMap[id];
+      saveSizes(nextMap);
+      return nextMap;
+    });
+
+    if (activeId && selectedSet.has(activeId)) {
+      setActiveId(null);
+      saveLastEdited(null);
+    }
+
+    clearSelectionMode();
+  }
+
   function maybeDeleteActiveIfEmpty() {
     if (!activeId) return;
     const n = notes.find((x) => x.id === activeId);
@@ -239,14 +291,15 @@ export default function App() {
     setActiveId(id);
     saveLastEdited(id);
     setView("edit");
+    clearSelectionMode();
   }
 
   function exitToGrid() {
     maybeDeleteActiveIfEmpty();
     setView("grid");
+    clearSelectionMode();
   }
 
-  // ✅ auto-height proporcional ao texto + compacto quando vazio (se não manualH)
   function autoResizeTextarea() {
     if (!activeId) return;
     const s = sizes[activeId];
@@ -274,7 +327,9 @@ export default function App() {
     const t = now();
 
     setNotes((prev) => {
-      const next = prev.map((n) => (n.id === activeId ? { ...n, text: nextText, updatedAt: t } : n));
+      const next = prev.map((n) =>
+        n.id === activeId ? { ...n, text: nextText, updatedAt: t } : n
+      );
       scheduleSave(next);
       return next;
     });
@@ -289,7 +344,9 @@ export default function App() {
     const t = now();
 
     setNotes((prev) => {
-      const next = prev.map((n) => (n.id === activeId ? { ...n, bg: safe, updatedAt: t } : n));
+      const next = prev.map((n) =>
+        n.id === activeId ? { ...n, bg: safe, updatedAt: t } : n
+      );
       scheduleSave(next);
       return next;
     });
@@ -297,7 +354,6 @@ export default function App() {
     pulseSaved();
   }
 
-  // ✅ Resize manual (canto inferior direito)
   function onResizeHandlePointerDown(e: React.PointerEvent) {
     if (!activeId) return;
     const card = cardRef.current;
@@ -334,13 +390,18 @@ export default function App() {
     setSizes((prev) => {
       const nextMap = {
         ...prev,
-        [drag.noteId]: { ...(prev[drag.noteId] ?? {}), w: nextW, h: nextH, manualW: true, manualH: true },
+        [drag.noteId]: {
+          ...(prev[drag.noteId] ?? {}),
+          w: nextW,
+          h: nextH,
+          manualW: true,
+          manualH: true,
+        },
       };
       saveSizes(nextMap);
       return nextMap;
     });
 
-    // textarea acompanha a altura manual
     const el = textareaRef.current;
     if (el) {
       const inner = Math.max(AUTO_EMPTY_TEXTAREA_H, nextH - FOOTER_H - 20);
@@ -355,9 +416,6 @@ export default function App() {
     e.preventDefault();
   }
 
-  // -----------------------------
-  // ✅ LONG PRESS (mobile) + vibração
-  // -----------------------------
   function cancelLongPress() {
     if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = null;
@@ -365,26 +423,27 @@ export default function App() {
   }
 
   function onGridPointerDown(e: React.PointerEvent) {
+    if (!isCoarsePointer()) return;
+
     const target = e.target as HTMLElement;
-
-    // só no vazio (não em cima de um card)
-    if (target.closest(".note-card")) return;
-
-    const isCoarse =
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(pointer:coarse)").matches;
-
-    // só para mobile/tablet
-    if (!isCoarse) return;
+    const noteCard = target.closest(".note-card") as HTMLElement | null;
+    const noteId = noteCard?.dataset.noteId;
 
     longPressStartRef.current = { x: e.clientX, y: e.clientY };
-
     cancelLongPress();
-    longPressTimerRef.current = window.setTimeout(() => {
-      // vibração sutil (se suportar)
-      if (navigator.vibrate) navigator.vibrate(12);
 
+    if (noteId) {
+      longPressTimerRef.current = window.setTimeout(() => {
+        if (navigator.vibrate) navigator.vibrate(12);
+        suppressNextCardClickRef.current = true;
+        enterSelectionMode(noteId);
+        cancelLongPress();
+      }, LONG_PRESS_MS);
+      return;
+    }
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      if (navigator.vibrate) navigator.vibrate(12);
       createNoteAndOpen();
       cancelLongPress();
     }, LONG_PRESS_MS);
@@ -396,13 +455,32 @@ export default function App() {
     const dx = Math.abs(e.clientX - longPressStartRef.current.x);
     const dy = Math.abs(e.clientY - longPressStartRef.current.y);
 
-    // se o usuário estiver rolando/arrastando, cancela
     if (dx > MOVE_TOLERANCE_PX || dy > MOVE_TOLERANCE_PX) {
       cancelLongPress();
     }
   }
 
-  // ✅ BOOT: sempre edit (última válida; senão cria; senão mais recente)
+  function onGridDoubleClick(e: React.MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.closest(".note-card")) return;
+    if (isCoarsePointer()) return;
+    createNoteAndOpen();
+  }
+
+  function onCardClick(noteId: string) {
+    if (suppressNextCardClickRef.current) {
+      suppressNextCardClickRef.current = false;
+      return;
+    }
+
+    if (isSelectionMode) {
+      toggleSelected(noteId);
+      return;
+    }
+
+    openNote(noteId);
+  }
+
   useEffect(() => {
     const loaded = loadNotes();
     const last = loadLastEdited();
@@ -419,7 +497,13 @@ export default function App() {
 
     if (loaded.length === 0) {
       const t = now();
-      const newNote: Note = { id: genId(), text: "", bg: "#FCFCFC", createdAt: t, updatedAt: t };
+      const newNote: Note = {
+        id: genId(),
+        text: "",
+        bg: "#FCFCFC",
+        createdAt: t,
+        updatedAt: t,
+      };
       const next = [newNote];
       setNotes(next);
       saveNotes(next);
@@ -437,7 +521,6 @@ export default function App() {
     }
   }, []);
 
-  // foco apenas desktop (não abre teclado no mobile)
   useEffect(() => {
     if (view !== "edit") return;
 
@@ -458,7 +541,6 @@ export default function App() {
     }, 0);
   }, [view, activeId]);
 
-  // ESC volta pro grid (desktop)
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (view !== "edit") return;
@@ -471,19 +553,11 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [view, notes, activeId]);
 
-  // ao trocar nota ativa: aplica auto-height proporcional
   useEffect(() => {
     if (view !== "edit") return;
     setTimeout(() => autoResizeTextarea(), 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, view]);
-
-  // Desktop: duplo clique no vazio cria (mobile: long press)
-  function onGridDoubleClick() {
-    createNoteAndOpen();
-  }
-
-  const activeSize = activeId ? sizes[activeId] : undefined;
 
   const cardStyle: React.CSSProperties | undefined =
     view === "edit" && activeId
@@ -507,22 +581,81 @@ export default function App() {
           role="button"
           tabIndex={0}
         >
+          <div className="grid-header">
+            {!isSelectionMode ? (
+              <>
+                <div className="grid-home-indicator" aria-label="Início" title="Início">
+                  <Home size={18} strokeWidth={1.5} />
+                </div>
+
+                <button
+                  type="button"
+                  className="topbar-icon-btn grid-select-btn"
+                  title="Selecionar"
+                  aria-label="Selecionar"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    enterSelectionMode();
+                  }}
+                >
+                  <CheckSquare size={18} strokeWidth={1.5} />
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="topbar-icon-btn"
+                  title="Cancelar"
+                  aria-label="Cancelar"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearSelectionMode();
+                  }}
+                >
+                  <X size={18} strokeWidth={1.5} />
+                </button>
+
+                <button
+                  type="button"
+                  className="topbar-icon-btn"
+                  title="Apagar selecionadas"
+                  aria-label="Apagar selecionadas"
+                  disabled={selectedIds.length === 0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSelectedNotes();
+                  }}
+                >
+                  <Trash2 size={18} strokeWidth={1.5} />
+                </button>
+              </>
+            )}
+          </div>
+
           <div className="grid-wrap">
-            {orderedNotes.map((n) => (
-              <button
-                key={n.id}
-                className="note-card"
-                style={{ background: n.bg }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openNote(n.id);
-                }}
-                type="button"
-              >
-                <div className="note-card-text clamp-4">{n.text.trim().length ? n.text : " "}</div>
-                <div className="note-card-meta">Salvo às {formatTime(n.updatedAt)}</div>
-              </button>
-            ))}
+            {orderedNotes.map((n) => {
+              const isSelected = selectedIds.includes(n.id);
+
+              return (
+                <button
+                  key={n.id}
+                  data-note-id={n.id}
+                  className={`note-card ${isSelected ? "note-card--selected" : ""}`}
+                  style={{ background: n.bg }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCardClick(n.id);
+                  }}
+                  type="button"
+                >
+                  <div className="note-card-text clamp-4">
+                    {n.text.trim().length ? n.text : " "}
+                  </div>
+                  <div className="note-card-meta">Salvo às {formatTime(n.updatedAt)}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -531,11 +664,10 @@ export default function App() {
         <div className="edit-screen">
           <div className="edit-topbar">
             <button className="back-btn" type="button" onClick={exitToGrid} aria-label="Voltar">
-  <span className="back-icon">←</span>
+              <span className="back-icon">←</span>
             </button>
           </div>
 
-          {/* Centralização vertical é feita no CSS (.edit-outer) */}
           <div className="edit-outer">
             <div className="edit-wrap">
               <div
