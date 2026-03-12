@@ -14,7 +14,7 @@ type View = "grid" | "edit";
 const STORAGE_NOTES = "ecosystem_notes_v1_notes";
 const STORAGE_LAST = "ecosystem_notes_v1_lastEditedNoteId";
 
-const BG_PALETTE = ["#FCFCFC", "#F7E7CD", "#F5E6EA", "#D4EFDF", "#D6EAF8"] as const;
+const BG_PALETTE = ["#F7E7CD", "#F5E6EA", "#D4EFDF", "#D6EAF8"] as const;
 const MAX_CHARS = 400;
 
 const LONG_PRESS_MS = 520;
@@ -40,7 +40,8 @@ function formatTime(ts: number) {
 }
 
 function safeBg(bg: string) {
-  return (BG_PALETTE as readonly string[]).includes(bg) ? bg : "#FCFCFC";
+  if (bg === "#FCFCFC") return BG_PALETTE[0];
+  return (BG_PALETTE as readonly string[]).includes(bg) ? bg : BG_PALETTE[0];
 }
 
 function loadNotes(): Note[] {
@@ -54,7 +55,7 @@ function loadNotes(): Note[] {
       .map((n: any) => ({
         id: String(n?.id ?? ""),
         text: typeof n?.text === "string" ? clampText(n.text) : "",
-        bg: safeBg(String(n?.bg ?? "#FCFCFC")),
+        bg: safeBg(String(n?.bg ?? BG_PALETTE[0])),
         createdAt: typeof n?.createdAt === "number" ? n.createdAt : now(),
         updatedAt: typeof n?.updatedAt === "number" ? n.updatedAt : now(),
       }))
@@ -87,9 +88,7 @@ function isMobileLikeNow() {
   const coarse =
     !!window.matchMedia && window.matchMedia("(pointer:coarse)").matches;
 
-  const narrow = window.innerWidth <= 1024;
-
-  return coarse || narrow;
+  return coarse;
 }
 
 export default function App() {
@@ -143,7 +142,7 @@ export default function App() {
       const newNote: Note = {
         id: genId(),
         text: "",
-        bg: "#FCFCFC",
+        bg: BG_PALETTE[0],
         createdAt: t,
         updatedAt: t,
       };
