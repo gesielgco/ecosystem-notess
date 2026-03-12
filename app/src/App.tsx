@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Home, CheckSquare, X, Trash2 } from "lucide-react";
+import { CheckSquare, X, Trash2 } from "lucide-react";
 
 type Note = {
   id: string;
@@ -13,35 +13,12 @@ type View = "grid" | "edit";
 
 const STORAGE_NOTES = "ecosystem_notes_v1_notes";
 const STORAGE_LAST = "ecosystem_notes_v1_lastEditedNoteId";
-const STORAGE_SIZES = "ecosystem_notes_v1_sizes";
 
 const BG_PALETTE = ["#FCFCFC", "#F7E7CD", "#F5E6EA", "#D4EFDF", "#D6EAF8"] as const;
 const MAX_CHARS = 400;
 
-// resize manual
-const MIN_W = 300;
-const MAX_W = 520;
-const MIN_H = 220;
-const MAX_H = 620;
-
-// auto-height do editor
-const AUTO_EMPTY_TEXTAREA_H = 120;
-const AUTO_MIN_TEXTAREA_H = 160;
-const AUTO_MAX_TEXTAREA_H = 360;
-
-// footer edit
-const FOOTER_H = 44;
-
-// mobile long press
 const LONG_PRESS_MS = 520;
 const MOVE_TOLERANCE_PX = 10;
-
-type NoteSize = {
-  w?: number;
-  h?: number;
-  manualW?: boolean;
-  manualH?: boolean;
-};
 
 function now() {
   return Date.now();
@@ -104,60 +81,30 @@ function saveLastEdited(id: string | null) {
   else localStorage.setItem(STORAGE_LAST, id);
 }
 
-function loadSizes(): Record<string, NoteSize> {
-  try {
-    const raw = localStorage.getItem(STORAGE_SIZES);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    return parsed;
-  } catch {
-    return {};
-  }
-}
+function isMobileLikeNow() {
+  if (typeof window === "undefined") return false;
 
-function saveSizes(map: Record<string, NoteSize>) {
-  localStorage.setItem(STORAGE_SIZES, JSON.stringify(map));
-}
+  const coarse =
+    !!window.matchMedia && window.matchMedia("(pointer:coarse)").matches;
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
+  const narrow = window.innerWidth <= 1024;
 
-function isCoarsePointer() {
-  return (
-    typeof window !== "undefined" &&
-    !!window.matchMedia &&
-    window.matchMedia("(pointer:coarse)").matches
-  );
+  return coarse || narrow;
 }
 
 export default function App() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [view, setView] = useState<View>("edit");
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [sizes, setSizes] = useState<Record<string, NoteSize>>({});
 
-  const [isFocused, setIsFocused] = useState(false);
+  const [isMobileLike, setIsMobileLike] = useState(false);
   const [savedPulse, setSavedPulse] = useState(false);
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const savedPulseTimer = useRef<number | null>(null);
-  const saveTimerRef = useRef<number | null>(null);
-
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const cardRef = useRef<HTMLDivElement | null>(null);
-
-  const dragRef = useRef<{
-    active: boolean;
-    startX: number;
-    startY: number;
-    startW: number;
-    startH: number;
-    noteId: string;
-  } | null>(null);
+  const savedPulseTimer = useRef<number | null>(null);
 
   const longPressTimerRef = useRef<number | null>(null);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -172,23 +119,103 @@ export default function App() {
     return notes.find((n) => n.id === activeId) ?? null;
   }, [notes, activeId]);
 
-  const activeSize = activeId ? sizes[activeId] : undefined;
+  useEffect(() => {
+    const apply = () => setIsMobileLike(isMobileLikeNow());
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, []);
 
-  function scheduleSave(nextNotes: Note[]) {
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = window.setTimeout(() => {
-      saveNotes(nextNotes);
-    }, 220);
-  }
+  useEffect(() => {
+    const loaded = loadNotes();
+    const last = loadLastEdited();
+
+    setNotes(loaded);
+
+    if (last && loaded.some((n) => n.id === last)) {
+      setActiveId(last);
+      setView("edit");
+      return;
+    }
+
+    if (loaded.length === 0) {
+      const t = now();
+      const newNote: Note = {
+        id: genId(),
+        text: "",
+        bg: "#FCFCFC",
+        createdAt: t,
+        updatedAt: t,
+      };
+      const next = [newNote];
+      setNotes(next);
+      saveNotes(next);
+      saveLastEdited(newNote.id);
+      setActiveId(newNote.id);
+      setView("edit");
+      return;
+    }
+
+    const mostRecent = [...loaded].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    if (mostRecent) {
+      setActiveId(mostRecent.id);
+      saveLastEdited(mostRecent.id);
+      setView("edit");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "edit" && activeNote) {
+      document.documentElement.style.backgroundColor = activeNote.bg;
+      document.body.style.backgroundColor = activeNote.bg;
+    } else {
+      document.documentElement.style.backgroundColor = "#f6f6f6";
+      document.body.style.backgroundColor = "#f6f6f6";
+    }
+
+    return () => {
+      document.documentElement.style.backgroundColor = "#f6f6f6";
+      document.body.style.backgroundColor = "#f6f6f6";
+    };
+  }, [view, activeNote]);
+
+  useEffect(() => {
+    if (view !== "edit") return;
+
+    const shouldFocus =
+      typeof window !== "undefined" &&
+      !!window.matchMedia &&
+      window.matchMedia("(pointer:fine)").matches;
+
+    if (!shouldFocus) return;
+
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      const el = textareaRef.current;
+      if (el) {
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
+    }, 0);
+  }, [view, activeId]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (view !== "edit") return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        exitToGrid();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [view, activeId, notes]);
 
   function pulseSaved() {
     if (savedPulseTimer.current) window.clearTimeout(savedPulseTimer.current);
     setSavedPulse(true);
     savedPulseTimer.current = window.setTimeout(() => setSavedPulse(false), 600);
-  }
-
-  function pickBgForNew(count: number) {
-    return BG_PALETTE[count % BG_PALETTE.length];
   }
 
   function clearSelectionMode() {
@@ -214,41 +241,27 @@ export default function App() {
     const newNote: Note = {
       id: genId(),
       text: "",
-      bg: safeBg(prefBg ?? pickBgForNew(notes.length)),
+      bg: safeBg(prefBg ?? BG_PALETTE[notes.length % BG_PALETTE.length]),
       createdAt: t,
       updatedAt: t,
     };
 
     const next = [newNote, ...notes];
     setNotes(next);
-    scheduleSave(next);
+    saveNotes(next);
 
     setActiveId(newNote.id);
     saveLastEdited(newNote.id);
     setView("edit");
     clearSelectionMode();
-
-    setSizes((prev) => {
-      const nextMap = { ...prev };
-      delete nextMap[newNote.id];
-      saveSizes(nextMap);
-      return nextMap;
-    });
   }
 
   function deleteNoteSilently(noteId: string) {
     const next = notes.filter((x) => x.id !== noteId);
     setNotes(next);
-    scheduleSave(next);
+    saveNotes(next);
 
     if (loadLastEdited() === noteId) saveLastEdited(null);
-
-    setSizes((prev) => {
-      const nextMap = { ...prev };
-      delete nextMap[noteId];
-      saveSizes(nextMap);
-      return nextMap;
-    });
   }
 
   function deleteSelectedNotes() {
@@ -257,14 +270,7 @@ export default function App() {
     const selectedSet = new Set(selectedIds);
     const next = notes.filter((n) => !selectedSet.has(n.id));
     setNotes(next);
-    scheduleSave(next);
-
-    setSizes((prev) => {
-      const nextMap = { ...prev };
-      for (const id of selectedIds) delete nextMap[id];
-      saveSizes(nextMap);
-      return nextMap;
-    });
+    saveNotes(next);
 
     if (activeId && selectedSet.has(activeId)) {
       setActiveId(null);
@@ -300,120 +306,34 @@ export default function App() {
     clearSelectionMode();
   }
 
-  function autoResizeTextarea() {
-    if (!activeId) return;
-    const s = sizes[activeId];
-    if (s?.manualH) return;
-
-    const el = textareaRef.current;
-    if (!el) return;
-
-    el.style.height = "auto";
-
-    const text = el.value.trim();
-    if (text.length === 0) {
-      el.style.height = `${AUTO_EMPTY_TEXTAREA_H}px`;
-      return;
-    }
-
-    const desired = el.scrollHeight;
-    const clampedH = clamp(desired, AUTO_MIN_TEXTAREA_H, AUTO_MAX_TEXTAREA_H);
-    el.style.height = `${clampedH}px`;
-  }
-
   function updateActiveText(nextTextRaw: string) {
     if (!activeId) return;
+
     const nextText = clampText(nextTextRaw);
     const t = now();
 
-    setNotes((prev) => {
-      const next = prev.map((n) =>
-        n.id === activeId ? { ...n, text: nextText, updatedAt: t } : n
-      );
-      scheduleSave(next);
-      return next;
-    });
+    const next = notes.map((n) =>
+      n.id === activeId ? { ...n, text: nextText, updatedAt: t } : n
+    );
 
+    setNotes(next);
+    saveNotes(next);
     pulseSaved();
-    queueMicrotask(() => autoResizeTextarea());
   }
 
   function updateActiveBg(bg: string) {
     if (!activeId) return;
+
     const safe = safeBg(bg);
     const t = now();
 
-    setNotes((prev) => {
-      const next = prev.map((n) =>
-        n.id === activeId ? { ...n, bg: safe, updatedAt: t } : n
-      );
-      scheduleSave(next);
-      return next;
-    });
+    const next = notes.map((n) =>
+      n.id === activeId ? { ...n, bg: safe, updatedAt: t } : n
+    );
 
+    setNotes(next);
+    saveNotes(next);
     pulseSaved();
-  }
-
-  function onResizeHandlePointerDown(e: React.PointerEvent) {
-    if (!activeId) return;
-    const card = cardRef.current;
-    if (!card) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const rect = card.getBoundingClientRect();
-    dragRef.current = {
-      active: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      startW: rect.width,
-      startH: rect.height,
-      noteId: activeId,
-    };
-
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }
-
-  function onResizeHandlePointerMove(e: React.PointerEvent) {
-    const drag = dragRef.current;
-    if (!drag?.active) return;
-
-    e.preventDefault();
-
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-
-    const nextW = clamp(drag.startW + dx, MIN_W, MAX_W);
-    const nextH = clamp(drag.startH + dy, MIN_H, MAX_H);
-
-    setSizes((prev) => {
-      const nextMap = {
-        ...prev,
-        [drag.noteId]: {
-          ...(prev[drag.noteId] ?? {}),
-          w: nextW,
-          h: nextH,
-          manualW: true,
-          manualH: true,
-        },
-      };
-      saveSizes(nextMap);
-      return nextMap;
-    });
-
-    const el = textareaRef.current;
-    if (el) {
-      const inner = Math.max(AUTO_EMPTY_TEXTAREA_H, nextH - FOOTER_H - 20);
-      el.style.height = `${Math.min(inner, AUTO_MAX_TEXTAREA_H)}px`;
-    }
-  }
-
-  function onResizeHandlePointerUp(e: React.PointerEvent) {
-    const drag = dragRef.current;
-    if (!drag) return;
-    dragRef.current = { ...drag, active: false };
-    e.preventDefault();
   }
 
   function cancelLongPress() {
@@ -423,7 +343,7 @@ export default function App() {
   }
 
   function onGridPointerDown(e: React.PointerEvent) {
-    if (!isCoarsePointer()) return;
+    if (!isMobileLikeNow()) return;
 
     const target = e.target as HTMLElement;
     const noteCard = target.closest(".note-card") as HTMLElement | null;
@@ -463,7 +383,7 @@ export default function App() {
   function onGridDoubleClick(e: React.MouseEvent) {
     const target = e.target as HTMLElement;
     if (target.closest(".note-card")) return;
-    if (isCoarsePointer()) return;
+    if (isMobileLikeNow()) return;
     createNoteAndOpen();
   }
 
@@ -481,93 +401,6 @@ export default function App() {
     openNote(noteId);
   }
 
-  useEffect(() => {
-    const loaded = loadNotes();
-    const last = loadLastEdited();
-    const loadedSizes = loadSizes();
-
-    setNotes(loaded);
-    setSizes(loadedSizes);
-
-    if (last && loaded.some((n) => n.id === last)) {
-      setActiveId(last);
-      setView("edit");
-      return;
-    }
-
-    if (loaded.length === 0) {
-      const t = now();
-      const newNote: Note = {
-        id: genId(),
-        text: "",
-        bg: "#FCFCFC",
-        createdAt: t,
-        updatedAt: t,
-      };
-      const next = [newNote];
-      setNotes(next);
-      saveNotes(next);
-      saveLastEdited(newNote.id);
-      setActiveId(newNote.id);
-      setView("edit");
-      return;
-    }
-
-    const mostRecent = [...loaded].sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    if (mostRecent) {
-      setActiveId(mostRecent.id);
-      saveLastEdited(mostRecent.id);
-      setView("edit");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (view !== "edit") return;
-
-    const isDesktop =
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(pointer:fine)").matches;
-
-    if (!isDesktop) return;
-
-    setTimeout(() => {
-      textareaRef.current?.focus();
-      const el = textareaRef.current;
-      if (el) {
-        const len = el.value.length;
-        el.setSelectionRange(len, len);
-      }
-    }, 0);
-  }, [view, activeId]);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (view !== "edit") return;
-      if (e.key === "Escape") {
-        e.preventDefault();
-        exitToGrid();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [view, notes, activeId]);
-
-  useEffect(() => {
-    if (view !== "edit") return;
-    setTimeout(() => autoResizeTextarea(), 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, view]);
-
-  const cardStyle: React.CSSProperties | undefined =
-    view === "edit" && activeId
-      ? {
-          background: activeNote?.bg,
-          width: activeSize?.manualW && activeSize?.w ? `${activeSize.w}px` : undefined,
-          height: activeSize?.manualH && activeSize?.h ? `${activeSize.h}px` : undefined,
-        }
-      : undefined;
-
   return (
     <div className="app-root">
       {view === "grid" && (
@@ -584,22 +417,26 @@ export default function App() {
           <div className="grid-header">
             {!isSelectionMode ? (
               <>
-                <div className="grid-home-indicator" aria-label="Início" title="Início">
-                  <Home size={18} strokeWidth={1.5} />
+                <div className="grid-hint" aria-hidden="true">
+                  {isMobileLike ? "pressione para criar" : "clique 2x para criar"}
                 </div>
 
-                <button
-                  type="button"
-                  className="topbar-icon-btn grid-select-btn"
-                  title="Selecionar"
-                  aria-label="Selecionar"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    enterSelectionMode();
-                  }}
-                >
-                  <CheckSquare size={18} strokeWidth={1.5} />
-                </button>
+                {!isMobileLike ? (
+                  <button
+                    type="button"
+                    className="topbar-icon-btn grid-select-btn"
+                    title="Selecionar"
+                    aria-label="Selecionar"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      enterSelectionMode();
+                    }}
+                  >
+                    <CheckSquare size={18} strokeWidth={1.5} />
+                  </button>
+                ) : (
+                  <div className="grid-header-spacer" />
+                )}
               </>
             ) : (
               <>
@@ -661,72 +498,51 @@ export default function App() {
       )}
 
       {view === "edit" && activeNote && (
-        <div className="edit-screen">
-          <div className="edit-topbar">
-            <button className="back-btn" type="button" onClick={exitToGrid} aria-label="Voltar">
-              <span className="back-icon">←</span>
+        <div className="edit-screen" style={{ background: activeNote.bg }}>
+          <div className="edit-card" style={{ background: activeNote.bg }}>
+            <button
+              className="edit-close-btn"
+              type="button"
+              onClick={exitToGrid}
+              aria-label="Fechar nota"
+              title="Fechar nota"
+            >
+              ×
             </button>
-          </div>
 
-          <div className="edit-outer">
-            <div className="edit-wrap">
-              <div
-                ref={cardRef}
-                className={`edit-card edit-card--postit ${isFocused ? "is-focused" : ""}`}
-                style={cardStyle}
-              >
-                <textarea
-                  ref={textareaRef}
-                  className="edit-textarea"
-                  placeholder="Escreva..."
-                  value={activeNote.text}
-                  onFocus={() => setIsFocused(true)}
-                  onBlur={() => setIsFocused(false)}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v.length > MAX_CHARS) updateActiveText(v.slice(0, MAX_CHARS));
-                    else updateActiveText(v);
-                  }}
-                  spellCheck
-                />
+            <textarea
+              ref={textareaRef}
+              className="edit-textarea"
+              placeholder="Escreva..."
+              value={activeNote.text}
+              onChange={(e) => updateActiveText(e.target.value)}
+              spellCheck
+            />
 
-                <div
-                  className="resize-handle"
-                  onPointerDown={onResizeHandlePointerDown}
-                  onPointerMove={onResizeHandlePointerMove}
-                  onPointerUp={onResizeHandlePointerUp}
-                  role="presentation"
-                  title="Ajustar tamanho"
-                />
-
-                <div className="edit-footer">
-                  <div className={`edit-saved ${savedPulse ? "saved-pulse" : ""}`}>
-                    Salvo às {formatTime(activeNote.updatedAt)}
-                  </div>
-
-                  <div className="edit-right">
-                    <div className="color-picker" aria-label="Selecionar cor do fundo">
-                      {BG_PALETTE.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          className={`swatch ${activeNote.bg === c ? "swatch-active" : ""}`}
-                          style={{ background: c }}
-                          onClick={() => updateActiveBg(c)}
-                          aria-label={`Cor ${c}`}
-                          title="Alterar cor"
-                        />
-                      ))}
-                    </div>
-
-                    <div className="edit-counter">
-                      {activeNote.text.length} / {MAX_CHARS}
-                    </div>
-                  </div>
-                </div>
+            <div className="edit-footer">
+              <div className={`edit-saved ${savedPulse ? "saved-pulse" : ""}`}>
+                Salvo às {formatTime(activeNote.updatedAt)}
               </div>
 
-              <div style={{ height: 10 }} />
+              <div className="edit-right">
+                <div className="color-picker" aria-label="Selecionar cor do fundo">
+                  {BG_PALETTE.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      className={`swatch ${activeNote.bg === c ? "swatch-active" : ""}`}
+                      style={{ background: c }}
+                      onClick={() => updateActiveBg(c)}
+                      aria-label={`Cor ${c}`}
+                      title="Alterar cor"
+                    />
+                  ))}
+                </div>
+
+                <div className="edit-counter">
+                  {activeNote.text.length} / {MAX_CHARS}
+                </div>
+              </div>
             </div>
           </div>
         </div>

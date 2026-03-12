@@ -5,14 +5,7 @@
 :root {
   --bg-app: #f6f6f6;
   --text: #333333;
-
-  --border: rgba(0, 0, 0, 0.05);
-  --border-strong: rgba(0, 0, 0, 0.12);
   --divider: rgba(0, 0, 0, 0.028);
-
-  --muted: rgba(51, 51, 51, 0.55);
-  --focus-shadow: 0 12px 28px rgba(0, 0, 0, 0.06);
-
   --selected-border: rgba(0, 0, 0, 0.14);
   --selected-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
@@ -61,14 +54,19 @@ body {
   justify-content: space-between;
 }
 
-.grid-home-indicator {
+.grid-hint {
+  font-size: 13px;
+  color: rgba(51, 51, 51, 0.16);
+  pointer-events: none;
+}
+
+.grid-header:hover .grid-hint {
+  color: rgba(51, 51, 51, 0.24);
+}
+
+.grid-header-spacer {
   width: 32px;
   height: 32px;
-  border-radius: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(51, 51, 51, 0.45);
 }
 
 .topbar-icon-btn {
@@ -182,87 +180,44 @@ body {
 ========================= */
 
 .edit-screen {
+  position: relative;
+  height: 100dvh;
   min-height: 100dvh;
-}
-
-.edit-topbar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 0 18px;
-  background: transparent;
-}
-
-.back-btn {
-  border: 0;
-  background: transparent;
-  padding: 6px 8px;
-  border-radius: 10px;
-  color: rgba(0, 0, 0, 0.45);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    color 0.16s ease,
-    transform 0.12s ease;
-}
-
-.back-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: rgba(0, 0, 0, 0.6);
-  transform: scale(1.03);
-}
-
-.back-btn:active {
-  transform: scale(0.97);
-}
-
-.back-icon {
-  display: inline-block;
-  transform: translateY(-1px);
-}
-
-.edit-outer {
-  min-height: calc(100dvh - 56px);
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 18px;
-  padding-top: 10px;
-}
-
-.edit-wrap {
   width: 100%;
-  display: flex;
-  justify-content: center;
+  overflow: hidden;
 }
 
 .edit-card {
   position: relative;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  transition: box-shadow 180ms ease, border-color 160ms ease;
-  width: 420px;
-  min-width: 300px;
-  max-width: 520px;
-  background: #fcfcfc;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 100%;
+  width: 100%;
 }
 
-.edit-card--postit {
-  width: 420px;
+.edit-close-btn {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: 12px;
+  z-index: 3;
+  border: 0;
+  background: transparent;
+  color: rgba(51, 51, 51, 0.45);
+  font-size: 24px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: opacity 0.16s ease;
 }
 
-.edit-card.is-focused {
-  border-color: var(--border-strong);
-  box-shadow: var(--focus-shadow);
+.edit-close-btn:hover {
+  opacity: 0.8;
 }
 
 .edit-textarea {
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
   border: 0;
   outline: none;
@@ -271,11 +226,12 @@ body {
   color: var(--text);
   font-size: 16px;
   line-height: 1.55;
-  padding: 18px 18px 10px;
-  min-height: 120px;
-  max-height: 360px;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 18px)
+    18px
+    10px
+    18px;
   overflow-y: auto;
-  transition: height 120ms ease;
 }
 
 .edit-textarea::placeholder {
@@ -283,12 +239,13 @@ body {
 }
 
 .edit-footer {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: 44px;
-  padding: 0 16px;
+  min-height: 44px;
+  padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 6px);
   border-top: 1px solid var(--divider);
 }
 
@@ -345,34 +302,11 @@ body {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
 }
 
-.resize-handle {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  width: 16px;
-  height: 16px;
-  cursor: nwse-resize;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.04);
-  opacity: 0;
-  transition: opacity 140ms ease, background 140ms ease;
-}
-
-.edit-card:hover .resize-handle,
-.edit-card.is-focused .resize-handle {
-  opacity: 0.55;
-}
-
-.resize-handle:hover {
-  background: rgba(0, 0, 0, 0.06);
-  opacity: 0.7;
-}
-
 /* =========================
-   Responsivo
+   MOBILE / TABLET
 ========================= */
 
-@media (max-width: 480px) {
+@media (max-width: 1024px) {
   .grid-screen {
     padding: 24px 16px 24px;
   }
@@ -381,46 +315,24 @@ body {
     margin-bottom: 14px;
   }
 
-  /* mobile usa long press, então não mostra o botão selecionar */
-  .grid-select-btn {
-    display: none;
-  }
-
-  .edit-topbar {
-    max-width: 340px;
-    margin: 0 auto;
-  }
-
-  .edit-card,
-  .edit-card--postit {
-    width: 340px;
-    min-width: 300px;
-    max-width: 340px;
+  .grid-hint {
+    font-size: 12px;
+    color: rgba(51, 51, 51, 0.18);
   }
 }
 
-@media (min-width: 768px) and (max-width: 1024px) {
-  .edit-topbar {
-    max-width: 380px;
-    margin: 0 auto;
-  }
-
-  .edit-card,
-  .edit-card--postit {
-    width: 380px;
-    max-width: 380px;
-  }
-}
+/* =========================
+   DESKTOP
+========================= */
 
 @media (min-width: 1025px) {
-  .edit-topbar {
-    max-width: 420px;
-    margin: 0 auto;
+  .edit-close-btn {
+    top: 12px;
+    right: 12px;
   }
 
-  .edit-card,
-  .edit-card--postit {
-    width: 420px;
-    max-width: 420px;
+  .edit-textarea {
+    font-size: 17px;
+    padding-top: 18px;
   }
 }
