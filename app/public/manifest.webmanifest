@@ -1,11 +1,6 @@
 {
   "name": "Post-it",
-  "short_name": "Post-it",
-  "description": "Um post-it digital leve, simples e minimalista.",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#F6F6F6",
-  "theme_color": "#F6F6F6",
+  "short_name": "Notas",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -17,5 +12,8 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]
+  ],
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "display": "standalone"
 }
